@@ -60,13 +60,23 @@ export const getEnquiries = async (params = {}) => {
   const response = await apiClient.get(apiEndpoints.getEnquiries, { params });
   return response?.data || response;
 };
-/**
- * 4. Tenant Reset Password
- * Target: [ACTIVE_BASE_URL]/tenant/password/reset
- * Request: { token, new_password }
- */
-export const resetPassword = async (payload) => {
-  return await apiClient.post(apiEndpoints.resetPassword, payload);
+export const resetPassword = async ({ token, new_password }) => {
+  try {
+    const response = await apiClient.post(apiEndpoints.resetPassword, {
+      token,
+      new_password,
+    });
+    return response?.data || response;
+  } catch (error) {
+    // Surface the backend message so the page can display it
+    const data = error?.response?.data;
+    const message =
+      (typeof data?.detail === "string" && data.detail) ||
+      data?.message ||
+      error?.message ||
+      "This reset link is invalid or has expired.";
+    throw new Error(message);
+  }
 };
 
 export { DEFAULT_BASE_URL };

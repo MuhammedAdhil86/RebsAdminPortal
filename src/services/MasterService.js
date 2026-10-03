@@ -258,3 +258,67 @@ export const deletePlanService = async (id, config = {}) =>
   request("DELETE plan-service/delete", { id }, () =>
     cloudflareClient.delete(apiEndpoints.planServiceDelete(id), config),
   );
+
+
+  /* ───────────── Plan Service Pricing ───────────── */
+
+// GET /teqbae/plan-service-pricing/list
+export const getPlanServicePricings = async (config = {}) =>
+  request("GET plan-service-pricing/list", null, () =>
+    cloudflareClient.get(apiEndpoints.planServicePricingList, config),
+  );
+
+// PUT /teqbae/plan-service-pricing/add (create: id 0)
+export const createPlanServicePricing = async (
+  {
+    plan_service_id,
+    billing_period_id,
+    included_users,
+    base_amount,
+    additional_user_price,
+  },
+  config = {},
+) => {
+  const body = {
+    id: 0,
+    plan_service_id: Number(plan_service_id),
+    billing_period_id: Number(billing_period_id),
+    included_users: Number(included_users),
+    base_amount: Number(base_amount),
+    additional_user_price: Number(additional_user_price),
+  };
+  return request("PUT plan-service-pricing/add (create)", body, () =>
+    cloudflareClient.put(apiEndpoints.planServicePricingAdd, body, config),
+  );
+};
+
+// PUT /teqbae/plan-service-pricing/add (update: id > 0)
+export const updatePlanServicePricing = async (
+  {
+    id,
+    plan_service_id,
+    billing_period_id,
+    included_users,
+    base_amount,
+    additional_user_price,
+  },
+  config = {},
+) => {
+  const body = {
+    id: Number(id),
+    plan_service_id: Number(plan_service_id),
+    billing_period_id: Number(billing_period_id),
+    included_users: Number(included_users),
+    base_amount: Number(base_amount),
+    additional_user_price: Number(additional_user_price),
+  };
+  return request("PUT plan-service-pricing/add (update)", body, () =>
+    cloudflareClient.put(apiEndpoints.planServicePricingAdd, body, config),
+  );
+};
+
+// DELETE /teqbae/plan-service-pricing/delete/:id
+export const deletePlanServicePricing = async (id, config = {}) =>
+  request("DELETE plan-service-pricing/delete", { id }, () =>
+    cloudflareClient.delete(apiEndpoints.planServicePricingDelete(id), config),
+  );

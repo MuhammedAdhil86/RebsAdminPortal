@@ -42,6 +42,11 @@ export const apiEndpoints = {
   planServiceAdd: "/teqbae/plan-service/add",
   planServiceDelete: (id) => `/teqbae/plan-service/delete/${id}`,
 
+
+  // Master data: Plan Service Pricing
+planServicePricingList: "/teqbae/plan-service-pricing/list",
+planServicePricingAdd: "/teqbae/plan-service-pricing/add", // PUT: id 0 = create, id > 0 = update
+planServicePricingDelete: (id) => `/teqbae/plan-service-pricing/delete/${id}`,
 };
 
 export default apiEndpoints;

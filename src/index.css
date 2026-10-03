@@ -1,7 +1,8 @@
  @import "tailwindcss";
 
 @theme {
-  --color-brand: #e11d2e;
+  --color-brand: #8B0000;
+  
   --color-brand-hover: #b91422;
   --color-canvas: #f3f4f6;
   --color-surface: #ffffff;
@@ -29,4 +30,3 @@ body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-i need gray and reddish blend for left side ```

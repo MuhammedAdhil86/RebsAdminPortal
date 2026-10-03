@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import logo from "@/assets/img/rebslogo.png";
+import { LOGO_URL } from "../../services/AssetService";
 import { loginCompany } from "../../services/AuthService";
 
 export default function LoginPage() {
@@ -77,10 +77,7 @@ export default function LoginPage() {
       {/* Left branding panel (hidden on mobile) */}
       <div className="hidden flex-1 flex-col justify-between bg-gradient-to-br from-gray-200 via-gray-300 to-brand p-12 lg:flex">
         <div className="flex items-center gap-3">
-          <img src={logo} alt="REBS logo" className="h-12 w-auto" />
-          <span className="font-brand text-3xl font-normal tracking-[0.15em] text-black">
-            REBS
-          </span>
+          <img src={LOGO_URL} alt="REBS logo" className="h-5 w-auto" />
         </div>
 
         <div className="mt-12">
@@ -109,7 +106,7 @@ export default function LoginPage() {
         >
           {/* Logo for mobile */}
           <div className="mb-6 flex items-center gap-3 lg:hidden">
-            <img src={logo} alt="REBS logo" className="h-12 w-auto" />
+            <img src={LOGO_URL} alt="REBS logo" className="h-12 w-auto" />
             <span className="font-brand text-2xl font-normal tracking-[0.15em] text-black">
               REBS
             </span>
@@ -189,14 +186,14 @@ export default function LoginPage() {
           </div>
 
           {/* Login button */}
+          {/* Login button */}
           <button
             type="submit"
             disabled={loading || googleLoading}
-            className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-70"
+            className="w-full rounded-lg bg-gradient-to-br from-gray-200 from-0% via-gray-300 via-5% to-brand to-30% py-2.5 font-semibold text-white shadow-sm transition hover:to-brand-hover disabled:cursor-not-allowed disabled:opacity-70"
           >
             {loading ? "Logging in..." : "Login"}
           </button>
-
           {/* Divider */}
           <div className="my-5 flex items-center gap-3">
             <span className="h-px flex-1 bg-line" />

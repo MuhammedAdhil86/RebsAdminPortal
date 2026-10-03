@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Settings } from "lucide-react";
 import { Icon } from "@iconify/react";
 
@@ -9,6 +9,7 @@ import useAuthStore from "../../store/authStore";
 
 function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
 
   // Works standalone; if parent passes props, those are used instead
   const [collapsedLocal, setCollapsedLocal] = useState(false);
@@ -17,7 +18,6 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [activeItem, setActiveItem] = useState("Clients Dashboard");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const toggleProfile = () => setIsProfileOpen(!isProfileOpen);
@@ -57,6 +57,7 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
     // Client management
     clientDashboard: <Icon icon="lucide:layout-dashboard" width="20" />,
     allClients: <Icon icon="lucide:users" width="20" />,
+    configuration: <Icon icon="lucide:sliders-horizontal" width="20" />,
     addClient: <Icon icon="lucide:user-plus" width="20" />,
     clientRequests: <Icon icon="lucide:inbox" width="20" />,
     subscriptions: <Icon icon="lucide:credit-card" width="20" />,
@@ -67,12 +68,23 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
     contracts: <Icon icon="lucide:file-text" width="20" />,
   };
 
+  // Items with a `path` navigate on click. Add `path` to the others
+  // as you create their pages/routes.
   const menuItems = [
     {
       section: "CLIENT MANAGEMENT",
       items: [
-        { title: "Clients Dashboard", icon: icons.clientDashboard },
+        {
+          title: "Clients Dashboard",
+          icon: icons.clientDashboard,
+          path: "/dashboard",
+        },
         { title: "All Clients", icon: icons.allClients },
+        {
+          title: "Configuration",
+          icon: icons.configuration,
+          path: "/configuration",
+        },
         { title: "Add Client", icon: icons.addClient },
         { title: "Client Requests", icon: icons.clientRequests },
         { title: "Subscriptions", icon: icons.subscriptions },
@@ -235,14 +247,18 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
                 {menu.section}
               </p>
               {menu.items.map((item) => {
-                const isActive = activeItem === item.title;
+                // Active state comes from the URL, so it survives page changes
+                const isActive = item.path
+                  ? pathname === item.path ||
+                    pathname.startsWith(`${item.path}/`)
+                  : false;
                 return (
                   <button
                     key={item.title}
                     type="button"
                     title={isCollapsed ? item.title : undefined}
                     onClick={() => {
-                      setActiveItem(item.title);
+                      if (item.path) navigate(item.path);
                       closeMobileSidebar(); // close the full-screen sidebar after picking
                     }}
                     className={`h-[40px] w-[90%] ${

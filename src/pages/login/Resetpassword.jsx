@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import logo from "@/assets/img/rebslogo.png";
+import { LOGO_URL } from "../../services/AssetService";
 import { resetPassword } from "../../services/AuthService";
 
 const RULES = [
@@ -10,6 +10,10 @@ const RULES = [
   { label: "One number", test: (v) => /\d/.test(v) },
   { label: "One special character", test: (v) => /[^A-Za-z0-9]/.test(v) },
 ];
+
+// Same blend effect as the login button
+const gradientBtn =
+  "w-full rounded-lg bg-gradient-to-br from-gray-200 from-0% via-gray-300 via-5% to-brand to-35% py-2.5 font-semibold text-white shadow-sm transition hover:to-brand-hover disabled:cursor-not-allowed disabled:opacity-70";
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -35,6 +39,7 @@ export default function ResetPasswordPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setError("");
 
     if (!allMet) {
@@ -64,18 +69,24 @@ export default function ResetPasswordPage() {
   const inputClass =
     "w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm text-ink placeholder:text-muted outline-none focus:border-brand focus:ring-4 focus:ring-brand/20";
 
-  const primaryBtn =
-    "block w-full rounded-lg bg-brand py-2.5 text-center font-semibold text-white transition hover:bg-brand-hover";
+  // Link-style button used in the "missing token" and "success" views
+  const linkBtn = `block text-center ${gradientBtn}`;
+
+  const MobileLogo = (
+    <div className="mb-6 flex items-center gap-3 lg:hidden">
+      <img src={LOGO_URL} alt="REBS logo" className="h-5 w-auto" />
+      <span className="font-brand text-2xl font-normal tracking-[0.15em] text-black">
+        REBS
+      </span>
+    </div>
+  );
 
   return (
     <div className="flex min-h-screen bg-canvas">
       {/* Left branding panel (hidden on mobile) */}
       <div className="hidden flex-1 flex-col justify-between bg-gradient-to-br from-gray-200 via-gray-300 to-brand p-12 lg:flex">
         <div className="flex items-center gap-3">
-          <img src={logo} alt="REBS logo" className="h-12 w-auto" />
-          <span className="font-brand text-3xl font-normal tracking-[0.15em] text-black">
-            REBS
-          </span>
+          <img src={LOGO_URL} alt="REBS logo" className="h-5 w-auto" />
         </div>
 
         <div className="mt-12">
@@ -101,16 +112,10 @@ export default function ResetPasswordPage() {
 
       {/* Right panel */}
       <div className="flex flex-1 items-center justify-center p-6">
-        {/* ───────── Token missing ───────── */}
         {!token ? (
+          /* ───────── Token missing ───────── */
           <div className="w-full max-w-sm rounded-xl border border-line bg-surface p-8 shadow-lg">
-            {/* Logo for mobile */}
-            <div className="mb-6 flex items-center gap-3 lg:hidden">
-              <img src={logo} alt="REBS logo" className="h-12 w-auto" />
-              <span className="font-brand text-2xl font-normal tracking-[0.15em] text-black">
-                REBS
-              </span>
-            </div>
+            {MobileLogo}
 
             <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-brand">
               <svg
@@ -136,13 +141,15 @@ export default function ResetPasswordPage() {
               a new one from the login page.
             </p>
 
-            <Link to="/login" className={primaryBtn}>
+            <Link to="/login" className={linkBtn}>
               Back to login
             </Link>
           </div>
         ) : success ? (
           /* ───────── Success ───────── */
           <div className="w-full max-w-sm rounded-xl border border-line bg-surface p-8 shadow-lg">
+            {MobileLogo}
+
             <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-brand">
               <svg
                 width="22"
@@ -158,28 +165,24 @@ export default function ResetPasswordPage() {
                 <path d="M4 12l6 6L20 6" />
               </svg>
             </div>
+
             <h1 className="text-2xl font-semibold text-ink">Password reset</h1>
             <p className="mb-6 mt-2 text-sm leading-relaxed text-muted">
               Your new password is live. Redirecting you to login...
             </p>
-            <Link to="/login" className={primaryBtn}>
+
+            <Link to="/login" className={linkBtn}>
               Go to login
             </Link>
           </div>
         ) : (
-          /* ───────── Token present: your existing form ───────── */
+          /* ───────── Token present: reset form ───────── */
           <form
             onSubmit={handleSubmit}
             noValidate
             className="w-full max-w-sm rounded-xl border border-line bg-surface p-8 shadow-lg"
           >
-            {/* Logo for mobile */}
-            <div className="mb-6 flex items-center gap-3 lg:hidden">
-              <img src={logo} alt="REBS logo" className="h-12 w-auto" />
-              <span className="font-brand text-2xl font-normal tracking-[0.15em] text-black">
-                REBS
-              </span>
-            </div>
+            {MobileLogo}
 
             <h1 className="text-2xl font-semibold text-ink">
               Choose a new password
@@ -189,7 +192,10 @@ export default function ResetPasswordPage() {
             </p>
 
             {error && (
-              <div className="mb-4 rounded-lg border border-brand/40 bg-brand/10 px-3 py-2 text-sm text-brand-hover">
+              <div
+                role="alert"
+                className="mb-4 rounded-lg border border-brand/40 bg-brand/10 px-3 py-2 text-sm text-brand-hover"
+              >
                 {error}
               </div>
             )}
@@ -296,18 +302,14 @@ export default function ResetPasswordPage() {
               ))}
             </ul>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-70"
-            >
+            <button type="submit" disabled={loading} className={gradientBtn}>
               {loading ? "Resetting..." : "Reset password"}
             </button>
 
             <p className="mt-5 text-center text-sm text-muted">
               <Link
                 to="/login"
-                className="font-medium text-brand hover:text-brand-hover"
+                className="font-medium text-brand  hover:text-brand-hover "
               >
                 Back to login
               </Link>

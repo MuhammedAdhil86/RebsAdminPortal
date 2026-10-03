@@ -10,12 +10,12 @@ const sanitizeUrl = (url = "") => url.replace(/\/+$/, "");
 
 export const CLOUDFLARE_URL = sanitizeUrl(
   import.meta.env.VITE_CLOUDFLARE_API_URL ||
-    "https://dir-mistakes-period-sri.trycloudflare.com"
+    "https://channels-expert-convertible-vic.trycloudflare.com"
 );
 
 export const PRODUCTION_URL = sanitizeUrl(
   import.meta.env.VITE_PRODUCTION_API_URL ||
-    "https://api.yourproductiondomain.com"
+    "https://rebs.blr1.digitaloceanspaces.com"
 );
 
 export const CURRENT_ENV =

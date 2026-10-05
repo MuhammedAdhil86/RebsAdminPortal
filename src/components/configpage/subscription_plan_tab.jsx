@@ -51,6 +51,12 @@ const SECTION = {
   }),
 };
 
-export default function SubscriptionPlanTab({ api }) {
-  return <MasterDataPanel section={SECTION} api={api} />;
+export default function SubscriptionPlanTab({ api, requestDelete }) {
+  return (
+    <MasterDataPanel
+      section={SECTION}
+      api={api}
+      requestDelete={requestDelete}
+    />
+  );
 }

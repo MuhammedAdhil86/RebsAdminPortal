@@ -3,7 +3,8 @@ import MasterDataPanel from "./master_data_panel";
 
 /**
  * Billing Period tab: configuration & form fields only.
- * The API (list / create / update / remove) is passed in by MasterDataTab.
+ * The API (list / create / update / remove) and the delete modal
+ * request (requestDelete) are passed in by MasterDataTab.
  */
 
 const SECTION = {
@@ -54,6 +55,12 @@ const SECTION = {
   }),
 };
 
-export default function BillingPeriodTab({ api }) {
-  return <MasterDataPanel section={SECTION} api={api} />;
+export default function BillingPeriodTab({ api, requestDelete }) {
+  return (
+    <MasterDataPanel
+      section={SECTION}
+      api={api}
+      requestDelete={requestDelete}
+    />
+  );
 }

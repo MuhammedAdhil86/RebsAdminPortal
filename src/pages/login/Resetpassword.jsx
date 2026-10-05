@@ -75,9 +75,6 @@ export default function ResetPasswordPage() {
   const MobileLogo = (
     <div className="mb-6 flex items-center gap-3 lg:hidden">
       <img src={LOGO_URL} alt="REBS logo" className="h-5 w-auto" />
-      <span className="font-brand text-2xl font-normal tracking-[0.15em] text-black">
-        REBS
-      </span>
     </div>
   );
 

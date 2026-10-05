@@ -87,7 +87,11 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
         },
         { title: "Add Client", icon: icons.addClient },
         { title: "Client Requests", icon: icons.clientRequests },
-        { title: "Subscriptions", icon: icons.subscriptions },
+        {
+          title: "Subscriptions",
+          icon: icons.subscriptions,
+          path: "/subscriptions",
+        },
         { title: "Invoices & Billing", icon: icons.invoices },
         { title: "Contracts", icon: icons.contracts },
         { title: "Support Tickets", icon: icons.tickets },

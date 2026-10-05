@@ -4,6 +4,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 // Eagerly loaded (needed on first paint)
 import LoginPage from "../pages/login/LoginPage";
 import ResetPasswordPage from "../pages/login/Resetpassword";
+import Subscriptions from "../pages/Subscriptions";
 
 // Layout + error screen
 import MainLayout from "../utils/MainLayout"; // <- change to where your layout file is
@@ -22,10 +23,7 @@ const page = (loader) => async () => {
 };
 
 export const router = createBrowserRouter([
-  /* ---------------------------------------------------------------
-   * PUBLIC ROUTES
-   * Logged-in users are redirected to /dashboard.
-   * --------------------------------------------------------------- */
+  /* PUBLIC ROUTES */
   {
     element: <PublicRoute />,
     errorElement: <RouteError />,
@@ -36,17 +34,14 @@ export const router = createBrowserRouter([
     ],
   },
 
-  /* ---------------------------------------------------------------
-   * PROTECTED ROUTES
-   * No token -> /login. Otherwise rendered inside MainLayout
-   * (sidebar + header). Header title/subtitle come from `handle`.
-   * --------------------------------------------------------------- */
+  /* PROTECTED ROUTES (inside MainLayout: sidebar + header) */
   {
     element: <ProtectedRoute />,
     errorElement: <RouteError />,
     children: [
       {
         element: <MainLayout />,
+        errorElement: <RouteError />,
         children: [
           {
             path: "/dashboard",
@@ -64,23 +59,20 @@ export const router = createBrowserRouter([
               subtitle: "Manage client companies and organization settings",
             },
           },
-
-          // ---- Add new pages below (also add `path` in Sidebar.jsx) ----
-          // {
-          //   path: "/all-clients",
-          //   lazy: page(() => import("../pages/AllClients")),
-          //   handle: { title: "All Clients", subtitle: "View and manage every client" },
-          // },
+          {
+            path: "/subscriptions",
+            element: <Subscriptions />,
+            handle: {
+              title: "Subscriptions",
+              subtitle: "Track client plans, services and user extensions",
+            },
+          },
         ],
       },
     ],
   },
 
-  /* ---------------------------------------------------------------
-   * FALLBACK
-   * Unknown URLs go to /login (a logged-in user is then sent on to
-   * /dashboard by PublicRoute).
-   * --------------------------------------------------------------- */
+  /* FALLBACK */
   { path: "*", element: <Navigate to="/login" replace /> },
 ]);
 

@@ -14,17 +14,18 @@ import { DEBUG } from "../../services/MasterService";
  * Shared list UI used by every master data tab:
  * search bar, Add button, table, Add/Edit modal and delete confirmation.
  *
- * Each tab file (country_tab, organisation_type_tab, service_tab) owns its
- * own config and API calls and passes them in:
+ * Each tab file owns its own config and API calls and passes them in:
  *
  *   section = {
  *     key, label, singular, icon,
- *     fields: [{ name, label, placeholder, hint, maxLength, required,
- *                unique, transform, pattern, patternMessage }],
+ *     columns?: [{ key, label, get?(item), primary?, searchable? }],
+ *     fields: [{ name, label, type, options, placeholder, hint, maxLength,
+ *                required, unique, transform, pattern, patternMessage, initial }],
  *     toPayload: (values) => object sent to the API (without id),
  *   }
  *
  *   api = { list(), create(payload), update(payload), remove(id) }
+ *   requestDelete = ({ singular, name, onConfirm }) => void  (from MasterDataTab)
  */
 
 const MAX_LEN = 100;
@@ -40,6 +41,10 @@ const log = (...args) => {
 
 const HIDDEN_COLUMNS = ["id"];
 const COLUMN_ORDER = ["name", "code"];
+
+// Readable label for a row (rows like pricing have no name)
+const itemLabel = (item) =>
+  item?.name || item?.code || (item?.id !== undefined ? `#${item.id}` : "item");
 
 const columnLabel = (key) =>
   key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -72,7 +77,16 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
   const isEdit = Boolean(item);
 
   const [values, setValues] = useState(() =>
-    Object.fromEntries(fields.map((f) => [f.name, item?.[f.name] ?? ""])),
+    Object.fromEntries(
+      fields.map((f) => [
+        f.name,
+        item
+          ? ((typeof f.initial === "function"
+              ? f.initial(item)
+              : item[f.name]) ?? "")
+          : "",
+      ]),
+    ),
   );
   const [errors, setErrors] = useState({});
   const [visible, setVisible] = useState(false);
@@ -87,7 +101,7 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
   // Enter animation, focus first field, lock page scroll
   useEffect(() => {
     const frame = requestAnimationFrame(() => setVisible(true));
-    inputRefs.current[fields[0].name]?.focus();
+    inputRefs.current[fields[0]?.name]?.focus();
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -169,7 +183,7 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
     }
 
     const cleaned = Object.fromEntries(
-      fields.map((f) => [f.name, String(values[f.name]).trim()]),
+      fields.map((f) => [f.name, String(values[f.name] ?? "").trim()]),
     );
 
     const ok = await onSubmit(cleaned);
@@ -231,7 +245,7 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
 
         {/* Form */}
         <form onSubmit={handleSubmit} noValidate>
-          <div className="px-6 pb-2 flex flex-col gap-4">
+          <div className="px-6 pb-2 flex flex-col gap-4 max-h-[60vh] overflow-y-auto">
             {fields.map((field) => (
               <div key={field.name} className="flex flex-col gap-1.5">
                 <label
@@ -242,23 +256,66 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
                   {field.required && <span className="text-red-500"> *</span>}
                 </label>
 
-                <input
-                  id={`field-${field.name}`}
-                  ref={(el) => {
-                    inputRefs.current[field.name] = el;
-                  }}
-                  type="text"
-                  value={values[field.name]}
-                  disabled={submitting}
-                  onChange={(e) => handleChange(field, e.target.value)}
-                  placeholder={field.placeholder}
-                  maxLength={(field.maxLength || MAX_LEN) + 1}
-                  autoComplete="off"
-                  aria-invalid={Boolean(errors[field.name])}
-                  className={`w-full px-3.5 py-2.5 text-sm border rounded-lg focus:outline-none focus:border-black focus:ring-4 focus:ring-black/5 disabled:opacity-50 transition-shadow ${
-                    errors[field.name] ? "border-red-400" : "border-gray-200"
-                  }`}
-                />
+                {field.type === "select" ? (
+                  <select
+                    id={`field-${field.name}`}
+                    ref={(el) => {
+                      inputRefs.current[field.name] = el;
+                    }}
+                    value={values[field.name]}
+                    disabled={submitting}
+                    onChange={(e) => handleChange(field, e.target.value)}
+                    aria-invalid={Boolean(errors[field.name])}
+                    className={`w-full px-3.5 py-2.5 text-sm border rounded-lg bg-white focus:outline-none focus:border-black focus:ring-4 focus:ring-black/5 disabled:opacity-50 transition-shadow ${
+                      errors[field.name] ? "border-red-400" : "border-gray-200"
+                    }`}
+                  >
+                    <option value="">
+                      {field.placeholder ||
+                        `Select ${field.label.toLowerCase()}`}
+                    </option>
+                    {field.options?.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : field.type === "textarea" ? (
+                  <textarea
+                    id={`field-${field.name}`}
+                    ref={(el) => {
+                      inputRefs.current[field.name] = el;
+                    }}
+                    rows={3}
+                    value={values[field.name]}
+                    disabled={submitting}
+                    onChange={(e) => handleChange(field, e.target.value)}
+                    placeholder={field.placeholder}
+                    maxLength={(field.maxLength || 255) + 1}
+                    aria-invalid={Boolean(errors[field.name])}
+                    className={`w-full px-3.5 py-2.5 text-sm border rounded-lg focus:outline-none focus:border-black focus:ring-4 focus:ring-black/5 disabled:opacity-50 transition-shadow resize-none ${
+                      errors[field.name] ? "border-red-400" : "border-gray-200"
+                    }`}
+                  />
+                ) : (
+                  <input
+                    id={`field-${field.name}`}
+                    ref={(el) => {
+                      inputRefs.current[field.name] = el;
+                    }}
+                    type={field.type || "text"}
+                    value={values[field.name]}
+                    disabled={submitting}
+                    onChange={(e) => handleChange(field, e.target.value)}
+                    placeholder={field.placeholder}
+                    maxLength={(field.maxLength || MAX_LEN) + 1}
+                    autoComplete="off"
+                    aria-invalid={Boolean(errors[field.name])}
+                    className={`w-full px-3.5 py-2.5 text-sm border rounded-lg focus:outline-none focus:border-black focus:ring-4 focus:ring-black/5 disabled:opacity-50 transition-shadow ${
+                      errors[field.name] ? "border-red-400" : "border-gray-200"
+                    }`}
+                  />
+                )}
 
                 {errors[field.name] ? (
                   <p className="text-xs text-red-600">{errors[field.name]}</p>
@@ -304,7 +361,7 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
 /*  Master Data Panel                                                 */
 /* ------------------------------------------------------------------ */
 
-export default function MasterDataPanel({ section, api }) {
+export default function MasterDataPanel({ section, api, requestDelete }) {
   const { singular, label, key, toPayload } = section;
 
   const [items, setItems] = useState([]);
@@ -313,7 +370,6 @@ export default function MasterDataPanel({ section, api }) {
 
   const [query, setQuery] = useState("");
   const [modal, setModal] = useState(null); // null | { item: object | null }
-  const [confirmId, setConfirmId] = useState(null);
 
   /* ------------------------------------------------------------- */
   /* API: Fetch Items (GET)                                        */
@@ -324,7 +380,6 @@ export default function MasterDataPanel({ section, api }) {
       if (showLoader) setLoading(true);
       try {
         const data = await api.list();
-        // Supports direct array or { data: [...] } responses
         const list = Array.isArray(data) ? data : data?.data || [];
         log(`fetchItems(${key}) loaded`, list.length, "items", list);
         setItems(list);
@@ -345,31 +400,52 @@ export default function MasterDataPanel({ section, api }) {
   /* ------------------------------------------------------------- */
   /* Search + columns                                              */
   /* ------------------------------------------------------------- */
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((item) =>
-      ["name", "code"].some((field) =>
-        String(item[field] ?? "")
-          .toLowerCase()
-          .includes(q),
-      ),
-    );
-  }, [items, query]);
-
-  // Columns come from the API data itself (everything except id)
   const columns = useMemo(() => {
+    if (Array.isArray(section.columns) && section.columns.length) {
+      return section.columns.map((c) => ({
+        key: c.key,
+        label: c.label,
+        get: (item) => (c.get ? c.get(item) : item[c.key]),
+        primary: Boolean(c.primary),
+        searchable: c.searchable !== false && !/(_at|_on)$/.test(c.key),
+      }));
+    }
+
     const keys = [];
     items.forEach((item) => {
       Object.keys(item).forEach((k) => {
         if (!HIDDEN_COLUMNS.includes(k) && !keys.includes(k)) keys.push(k);
       });
     });
+
     return [
       ...COLUMN_ORDER.filter((k) => keys.includes(k)),
       ...keys.filter((k) => !COLUMN_ORDER.includes(k)),
-    ];
-  }, [items]);
+    ].map((k) => ({
+      key: k,
+      label: columnLabel(k),
+      get: (item) => item[k],
+      primary: k === "name",
+      searchable: !/(_at|_on)$/.test(k),
+    }));
+  }, [items, section.columns]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((item) =>
+      columns.some((col) => {
+        if (!col.searchable) return false;
+        const value = col.get(item);
+        return (
+          value !== null &&
+          value !== undefined &&
+          typeof value !== "object" &&
+          String(value).toLowerCase().includes(q)
+        );
+      }),
+    );
+  }, [items, columns, query]);
 
   /* ------------------------------------------------------------- */
   /* API: Add / Update (PUT, id 0 = create)                        */
@@ -423,25 +499,46 @@ export default function MasterDataPanel({ section, api }) {
       log("handleDelete result", result);
 
       setItems((prev) => prev.filter((current) => current.id !== item.id));
-      setConfirmId(null);
       toast.success(`${singular} deleted.`);
+      return true;
     } catch (err) {
       log("handleDelete failed", err);
       toast.error(err.message || `Failed to delete ${singular.toLowerCase()}`);
+      return false;
     } finally {
       setSubmitting(false);
     }
   };
 
+  // Opens the shared DeleteConfirmModal (provided by MasterDataTab).
+  // No window.confirm fallback: if a tab forgets to pass requestDelete,
+  // it is reported immediately instead of silently using the browser popup.
+  const askDelete = (item) => {
+    console.log("askDelete", {
+      section: key,
+      requestDelete: typeof requestDelete,
+    });
+
+    if (typeof requestDelete !== "function") {
+      console.error(`requestDelete missing for section "${key}"`);
+      toast.error(`Delete modal not connected for "${label}".`);
+      return;
+    }
+
+    requestDelete({
+      singular,
+      name: itemLabel(item),
+      onConfirm: () => handleDelete(item),
+    });
+  };
+
   const openAdd = () => {
     log("openAdd", key);
-    setConfirmId(null);
     setModal({ item: null });
   };
 
   const openEdit = (item) => {
     log("openEdit", item);
-    setConfirmId(null);
     setModal({ item });
   };
 
@@ -531,11 +628,11 @@ export default function MasterDataPanel({ section, api }) {
                 <tr className="bg-gray-50/60 text-[11px] uppercase tracking-wider text-gray-500 border-b border-gray-100">
                   {columns.map((col) => (
                     <th
-                      key={col}
+                      key={col.key}
                       scope="col"
                       className="px-5 py-2.5 font-medium whitespace-nowrap"
                     >
-                      {columnLabel(col)}
+                      {col.label}
                     </th>
                   ))}
                   <th
@@ -549,8 +646,6 @@ export default function MasterDataPanel({ section, api }) {
 
               <tbody className="divide-y divide-gray-100">
                 {filtered.map((item) => {
-                  const isConfirming = confirmId === item.id;
-
                   return (
                     <tr
                       key={item.id}
@@ -558,73 +653,47 @@ export default function MasterDataPanel({ section, api }) {
                     >
                       {columns.map((col) => (
                         <td
-                          key={col}
+                          key={col.key}
                           className={`px-5 py-3.5 ${
-                            col === "name"
+                            col.primary
                               ? "text-gray-800"
                               : "text-gray-500 whitespace-nowrap"
                           }`}
                         >
-                          {formatCell(col, item[col])}
+                          {formatCell(col.key, col.get(item))}
                         </td>
                       ))}
 
                       <td className="px-5 py-3.5">
-                        {isConfirming ? (
-                          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-                            <span className="text-xs text-gray-500">
-                              Delete this {singular.toLowerCase()}?
-                            </span>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            title="Edit"
+                            disabled={submitting}
+                            aria-label={`Edit ${itemLabel(item)}`}
+                            onClick={() => openEdit(item)}
+                            className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-black transition-colors disabled:opacity-40"
+                          >
+                            <Icon
+                              icon="mdi:pencil-outline"
+                              className="w-[18px] h-[18px]"
+                            />
+                          </button>
 
-                            <button
-                              type="button"
-                              disabled={submitting}
-                              onClick={() => handleDelete(item)}
-                              className="px-3 py-1 text-xs rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-                            >
-                              Delete
-                            </button>
-
-                            <button
-                              type="button"
-                              disabled={submitting}
-                              onClick={() => setConfirmId(null)}
-                              className="px-3 py-1 text-xs rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              type="button"
-                              title="Edit"
-                              disabled={submitting}
-                              aria-label={`Edit ${item.name}`}
-                              onClick={() => openEdit(item)}
-                              className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-black transition-colors disabled:opacity-40"
-                            >
-                              <Icon
-                                icon="mdi:pencil-outline"
-                                className="w-[18px] h-[18px]"
-                              />
-                            </button>
-
-                            <button
-                              type="button"
-                              title="Delete"
-                              disabled={submitting}
-                              aria-label={`Delete ${item.name}`}
-                              onClick={() => setConfirmId(item.id)}
-                              className="p-2 rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
-                            >
-                              <Icon
-                                icon="mdi:trash-can-outline"
-                                className="w-[18px] h-[18px]"
-                              />
-                            </button>
-                          </div>
-                        )}
+                          <button
+                            type="button"
+                            title="Delete"
+                            disabled={submitting}
+                            aria-label={`Delete ${itemLabel(item)}`}
+                            onClick={() => askDelete(item)}
+                            className="p-2 rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
+                          >
+                            <Icon
+                              icon="mdi:trash-can-outline"
+                              className="w-[18px] h-[18px]"
+                            />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

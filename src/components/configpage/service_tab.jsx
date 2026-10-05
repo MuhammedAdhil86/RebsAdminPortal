@@ -3,7 +3,8 @@ import MasterDataPanel from "./master_data_panel";
 
 /**
  * Services tab: form fields only.
- * The API (list / create / update / remove) is passed in by MasterDataTab.
+ * The API (list / create / update / remove) and the delete modal
+ * request (requestDelete) are passed in by MasterDataTab.
  */
 
 const SECTION = {
@@ -24,6 +25,12 @@ const SECTION = {
   toPayload: (values) => ({ name: values.name }),
 };
 
-export default function ServiceTab({ api }) {
-  return <MasterDataPanel section={SECTION} api={api} />;
+export default function ServiceTab({ api, requestDelete }) {
+  return (
+    <MasterDataPanel
+      section={SECTION}
+      api={api}
+      requestDelete={requestDelete}
+    />
+  );
 }

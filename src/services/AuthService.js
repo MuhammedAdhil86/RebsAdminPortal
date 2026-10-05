@@ -1,4 +1,4 @@
-import apiClient, { DEFAULT_BASE_URL } from "../api/AxiosClient";
+import apiClient, { CLOUDFLARE_URL, DEFAULT_BASE_URL } from "../api/AxiosClient";
 import { apiEndpoints } from "../api/ApiEndpoints";
 import useAuthStore from "../store/authStore";
 
@@ -34,7 +34,7 @@ export const loginCompany = async (credentials) => {
  */
 export const logoutCompany = async () => {
   try {
-    await apiClient.post(apiEndpoints.logout);
+    await   cloudflareClient.post(apiEndpoints.logout);
   } catch (error) {
     console.error("Logout request failed on server:", error);
   } finally {
@@ -48,7 +48,7 @@ export const logoutCompany = async () => {
  * Request: { email }
  */
 export const forgotPassword = async (payload) => {
-  return await apiClient.post(apiEndpoints.forgotPassword, payload);
+  return await   cloudflareClient.post(apiEndpoints.forgotPassword, payload);
 };
 /**
  * Get all tenant enquiries
@@ -62,7 +62,7 @@ export const getEnquiries = async (params = {}) => {
 };
 export const resetPassword = async ({ token, new_password }) => {
   try {
-    const response = await apiClient.post(apiEndpoints.resetPassword, {
+    const response = await   cloudflareClient.post(apiEndpoints.resetPassword, {
       token,
       new_password,
     });

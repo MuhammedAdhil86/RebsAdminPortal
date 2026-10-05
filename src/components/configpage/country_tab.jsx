@@ -3,7 +3,8 @@ import MasterDataPanel from "./master_data_panel";
 
 /**
  * Countries tab: form fields only.
- * The API (list / create / update / remove) is passed in by MasterDataTab.
+ * The API (list / create / update / remove) and the delete modal
+ * request (requestDelete) are passed in by MasterDataTab.
  */
 
 const SECTION = {
@@ -36,6 +37,18 @@ const SECTION = {
   toPayload: (values) => ({ name: values.name, code: values.code }),
 };
 
-export default function CountryTab({ api }) {
-  return <MasterDataPanel section={SECTION} api={api} />;
+export default function CountryTab({ api, requestDelete }) {
+  // Temporary debug log: remove once the delete modal opens correctly
+  console.log("CountryTab props:", {
+    api: typeof api,
+    requestDelete: typeof requestDelete,
+  });
+
+  return (
+    <MasterDataPanel
+      section={SECTION}
+      api={api}
+      requestDelete={requestDelete}
+    />
+  );
 }

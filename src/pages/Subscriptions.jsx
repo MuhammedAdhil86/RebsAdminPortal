@@ -6,6 +6,7 @@ import {
   updateSubscriptionStatus,
   renewSubscription,
 } from "../services/SubscriptionService"; // adjust path if needed
+import { getBillingPeriods } from "../services/MasterService"; // adjust path if needed
 import SubscriptionsTab, {
   CompanyCell,
   StatusBadge,
@@ -69,13 +70,19 @@ const toRows = (companies) =>
 /* ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
-/*  RENEW MODAL (POST /tenant/subscription/{id}/renew)                */
+/*  RENEW MODAL (POST /subscriptions/{id}/renew)                      */
 /* ------------------------------------------------------------------ */
 
 const toNum = (v) => (v !== "" && !Number.isNaN(Number(v)) ? Number(v) : v);
 
 function RenewModal({ row, onClose, onRenewed }) {
   const [usePricing, setUsePricing] = useState(true);
+  // starts on the current billing period; only sent if the user picks another
+  const [billingPeriodId, setBillingPeriodId] = useState(
+    row.billingPeriodId != null ? String(row.billingPeriodId) : "",
+  );
+  const [periods, setPeriods] = useState([]);
+  const [loadingPeriods, setLoadingPeriods] = useState(false);
   const [extendUsers, setExtendUsers] = useState(false);
   const [extensions, setExtensions] = useState(() =>
     row.userExtensions.map((e) => ({
@@ -85,6 +92,31 @@ function RenewModal({ row, onClose, onRenewed }) {
   );
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        setLoadingPeriods(true);
+        const res = await getBillingPeriods(SILENT);
+        const list = Array.isArray(res)
+          ? res
+          : res?.data || res?.billing_periods || [];
+        if (active) setPeriods(list);
+      } catch (err) {
+        toast.error(
+          err?.response?.data?.message ||
+            err?.message ||
+            "Failed to load billing periods.",
+        );
+      } finally {
+        if (active) setLoadingPeriods(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const updateExt = (i, patch) =>
     setExtensions((prev) =>
@@ -99,10 +131,14 @@ function RenewModal({ row, onClose, onRenewed }) {
     ]);
 
   const buildOptions = () => {
-    const options = { use_current_pricing: usePricing };
-    // billing period is not changed on renew -> send the current one
-    if (row.billingPeriodId != null)
-      options.billing_period_id = row.billingPeriodId;
+    // send only what the user changed; a plain renew sends {}
+    const options = {};
+    if (!usePricing) options.use_current_pricing = false; // server default is true
+    if (
+      billingPeriodId !== "" &&
+      Number(billingPeriodId) !== Number(row.billingPeriodId)
+    )
+      options.billing_period_id = toNum(billingPeriodId);
     if (extendUsers) {
       options.extend_users = true;
       options.user_extensions = extensions.map((e) => ({
@@ -189,14 +225,27 @@ function RenewModal({ row, onClose, onRenewed }) {
           Use current pricing (untick to keep old prices)
         </label>
 
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1.5 max-w-xs">
           <label className="text-[11px] uppercase tracking-wider text-gray-500">
             Billing Period
           </label>
-          <p className="text-sm text-gray-900">
-            {row.billingPeriod || "—"}
-            {row.billingMonths ? ` (${row.billingMonths} mo)` : ""}
-          </p>
+          <select
+            value={billingPeriodId}
+            onChange={(e) => setBillingPeriodId(e.target.value)}
+            disabled={loadingPeriods}
+            className={inputCls}
+          >
+            {loadingPeriods && <option value="">Loading...</option>}
+            {periods.map((bp) => (
+              <option key={bp.id} value={bp.id}>
+                {bp.name}
+                {bp.months ? ` (${bp.months} mo)` : ""}
+                {Number(bp.id) === Number(row.billingPeriodId)
+                  ? " - current"
+                  : ""}
+              </option>
+            ))}
+          </select>
         </div>
 
         <label className="flex items-center gap-2 text-sm text-gray-700">

@@ -65,7 +65,7 @@ tenantSubscriptionInfo: "/tenant/subscription/tenant-info",
 
   updateSubscriptionStatus: (subscriptionId) =>
     `/tenant/subscription/${subscriptionId}/update-status`,
-renewSubscription: (id) => `/subscriptions/${id}/renew`,
+renewSubscription: (id) => `/tenant/subscription/${id}/renew`,   // matches your other tenant endpoints
  changeSubscriptionPlan: (subscriptionId) =>
   `/tenant/subscription/${subscriptionId}/change-plan`,
   // Enquiry Endpoints

@@ -46,3 +46,16 @@ export const getEnquiryServiceSummary = async (params = {}) => {
     services: [...byService.values()].sort((a, b) => b.count - a.count),
   };
 };
+
+/* ───────────── Tenant Enquiries ───────────── */
+
+// DELETE /tenant/enquiry/delete/{enquiry_id}
+export const deleteEnquiry = async (enquiryId, config = {}) =>
+  request(`DELETE enquiry/delete/${enquiryId}`, { enquiryId }, () =>
+    cloudflareClient.delete(
+      typeof apiEndpoints.deleteEnquiry === "function"
+        ? apiEndpoints.deleteEnquiry(enquiryId)
+        : `${apiEndpoints.deleteEnquiry}/${enquiryId}`,
+      config
+    )
+  );

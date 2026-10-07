@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Icon } from "@iconify/react";
 import {
   UniversalTable,
@@ -6,71 +6,8 @@ import {
   SearchBox,
   statusPill,
   companyCell,
-} from "./CompaniesTab"; // shared table / modal / search / cells (already in your project)
-
-/* ------------------------------------------------------------------ */
-/*  STATIC DATA – no API, nothing depends on today's date              */
-/* ------------------------------------------------------------------ */
-
-// Fixed "today" used for the static demo so the numbers never change
-const BASE_DATE = new Date(2026, 8, 30); // 30 Sep 2026
-
-const SUBSCRIPTIONS = [
-  {
-    id: 1,
-    company: "Techno Soft Solutions",
-    plan: "Enterprise",
-    amount: "₹1,20,000",
-    daysLeft: 5,
-    autoRenew: true,
-  },
-  {
-    id: 2,
-    company: "Bright Retail Pvt Ltd",
-    plan: "Business",
-    amount: "₹60,000",
-    daysLeft: -3,
-    autoRenew: false,
-  },
-  {
-    id: 3,
-    company: "Nova Health Care",
-    plan: "Enterprise",
-    amount: "₹1,20,000",
-    daysLeft: 25,
-    autoRenew: true,
-  },
-  {
-    id: 4,
-    company: "Skyline Constructions",
-    plan: "Business",
-    amount: "₹60,000",
-    daysLeft: 12,
-    autoRenew: false,
-  },
-  {
-    id: 5,
-    company: "Orbit Media",
-    plan: "Starter",
-    amount: "₹24,000",
-    daysLeft: 2,
-    autoRenew: false,
-  },
-  {
-    id: 6,
-    company: "Greenfield Logistics",
-    plan: "Starter",
-    amount: "₹24,000",
-    daysLeft: 45,
-    autoRenew: true,
-  },
-];
-
-const RENEW_OPTIONS = [
-  { label: "1 Month", months: 1 },
-  { label: "6 Months", months: 6 },
-  { label: "12 Months", months: 12 },
-];
+} from "./CompaniesTab";
+import { getTenantSubscriptions } from "../../services/SubscriptionService";
 
 const REMINDER_DAYS = [
   { key: 30, label: "30 days before due date" },
@@ -81,73 +18,187 @@ const REMINDER_DAYS = [
 ];
 
 /* ------------------------------------------------------------------ */
-/*  HELPERS                                                            */
+/*  HELPERS                                                           */
 /* ------------------------------------------------------------------ */
 
-const dueLabel = (daysLeft) => {
-  const d = new Date(BASE_DATE);
-  d.setDate(d.getDate() + daysLeft);
-  return d.toLocaleDateString("en-GB", {
+const formatDate = (dateObj) => {
+  if (!dateObj || isNaN(dateObj.getTime())) return "—";
+  return dateObj.toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
 };
 
-const getStatus = (daysLeft) =>
-  daysLeft < 0 ? "Overdue" : daysLeft <= 7 ? "Due Soon" : "Active";
+const formatINR = (val) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(val);
+
+const calculateBalanceDays = (targetDateString) => {
+  if (!targetDateString) return 0;
+  const target = new Date(targetDateString);
+  if (isNaN(target.getTime())) return 0;
+
+  const now = new Date();
+  const utcNow = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const utcTarget = Date.UTC(
+    target.getFullYear(),
+    target.getMonth(),
+    target.getDate(),
+  );
+
+  return Math.round((utcTarget - utcNow) / (1000 * 60 * 60 * 24));
+};
+
+const getStatus = (daysLeft, apiStatus) => {
+  if (apiStatus && apiStatus.toLowerCase() === "expired") return "Overdue";
+  if (daysLeft < 0) return "Overdue";
+  if (daysLeft <= 7) return "Due Soon";
+  return "Active";
+};
 
 const plural = (n) => (n === 1 ? "" : "s");
 
-function Toggle({ checked, onChange, label }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={onChange}
-      className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-        checked ? "bg-black" : "bg-gray-300"
-      }`}
-    >
-      <span
-        className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
-          checked ? "translate-x-4" : ""
-        }`}
-      />
-    </button>
-  );
-}
-
-const daysLeftCell = (daysLeft) => {
-  if (daysLeft < 0)
+const balanceDaysCell = (daysLeft) => {
+  if (daysLeft < 0) {
+    const overdue = Math.abs(daysLeft);
     return (
-      <span className="text-red-600">
-        {Math.abs(daysLeft)} day{plural(Math.abs(daysLeft))} overdue
+      <span className="text-red-600 font-medium">
+        {overdue} day{plural(overdue)} overdue
       </span>
     );
-  if (daysLeft === 0) return <span className="text-red-600">Due today</span>;
+  }
+  if (daysLeft === 0) {
+    return <span className="text-amber-600 font-semibold">Due today</span>;
+  }
   return (
-    <span className={daysLeft <= 7 ? "text-yellow-700" : "text-gray-700"}>
+    <span
+      className={daysLeft <= 7 ? "text-amber-700 font-medium" : "text-gray-700"}
+    >
       {daysLeft} day{plural(daysLeft)} left
     </span>
   );
 };
 
 /* ------------------------------------------------------------------ */
-/*  SUBSCRIPTION MANAGEMENT TAB                                        */
+/*  HOVER COMPONENT (Uses fixed coordinates to prevent clipping)      */
+/* ------------------------------------------------------------------ */
+
+function HoverDetail({ title, label, icon, items }) {
+  const [visible, setVisible] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+
+  const handleMouseEnter = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCoords({
+      top: rect.top - 8, // slight offset above
+      left: rect.left,
+    });
+    setVisible(true);
+  };
+
+  const handleMouseLeave = () => {
+    setVisible(false);
+  };
+
+  return (
+    <div
+      className="inline-block"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <span className="inline-flex items-center gap-1.5 font-medium text-gray-800 border-b border-dashed border-gray-400 cursor-pointer hover:text-black">
+        {label}
+        <Icon
+          icon="mdi:information-outline"
+          className="w-3.5 h-3.5 text-gray-400 hover:text-black"
+        />
+      </span>
+
+      {visible && (
+        <div
+          style={{
+            position: "fixed",
+            top: `${coords.top}px`,
+            left: `${coords.left}px`,
+            transform: "translateY(-100%)",
+          }}
+          className="z-[9999] min-w-[200px] p-3 bg-white text-gray-800 rounded-lg shadow-xl border border-gray-200 text-xs pointer-events-none transition-all"
+        >
+          <p className="font-semibold text-gray-900 border-b pb-1.5 mb-2 text-[11px] uppercase tracking-wide flex items-center gap-1.5">
+            <Icon icon={icon} className="w-3.5 h-3.5 text-gray-600" />
+            {title}
+          </p>
+          <div className="space-y-1.5 text-[11px]">
+            {items.map((it, idx) => (
+              <div
+                key={idx}
+                className="flex justify-between items-center gap-3"
+              >
+                <span className="text-gray-400">{it.label}:</span>
+                {it.badge ? (
+                  <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-800">
+                    {it.value}
+                  </span>
+                ) : (
+                  <span className="font-medium text-gray-800">{it.value}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  DATA ADAPTER                                                      */
+/* ------------------------------------------------------------------ */
+
+const mapApiCompanyToRow = (item) => {
+  const sub = item.subscription || {};
+  const endDateStr = sub.end_date || sub.base_end_date;
+  const endDateObj = endDateStr ? new Date(endDateStr) : null;
+  const daysLeft = calculateBalanceDays(endDateStr);
+
+  const servicesTotal = (sub.services || []).reduce(
+    (acc, curr) => acc + (Number(curr.base_amount) || 0),
+    0,
+  );
+  const extensionsTotal = (sub.user_extensions || []).reduce(
+    (acc, curr) => acc + (Number(curr.total_amount) || 0),
+    0,
+  );
+  const totalAmount = servicesTotal + extensionsTotal;
+
+  return {
+    id: item.company_id,
+    company: item.company_name,
+    plan: sub.plan || null,
+    billingPeriod: sub.billing_period || null,
+    amount: totalAmount > 0 ? formatINR(totalAmount) : "₹0",
+    daysLeft,
+    endDateObj,
+    dueDate: formatDate(endDateObj),
+    status: getStatus(daysLeft, sub.status),
+    raw: item,
+  };
+};
+
+/* ------------------------------------------------------------------ */
+/*  SUBSCRIPTION MANAGEMENT TAB                                       */
 /* ------------------------------------------------------------------ */
 
 function SubscriptionsTab() {
-  const [subs, setSubs] = useState(
-    SUBSCRIPTIONS.map((s) => ({ ...s, reminderSent: false })),
-  );
+  const [subs, setSubs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState("");
-
-  const [renewId, setRenewId] = useState(null);
-  const [renewMonths, setRenewMonths] = useState(12);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState({
@@ -155,6 +206,24 @@ function SubscriptionsTab() {
     email: true,
     inApp: true,
   });
+
+  const fetchSubscriptions = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await getTenantSubscriptions();
+      const list = res?.companies || [];
+      setSubs(list.map(mapApiCompanyToRow));
+    } catch (err) {
+      setError("Failed to fetch tenant subscriptions. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSubscriptions();
+  }, [fetchSubscriptions]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -164,105 +233,75 @@ function SubscriptionsTab() {
 
   const q = search.toLowerCase();
 
-  const rows = subs.map((s) => ({
-    ...s,
-    dueDate: dueLabel(s.daysLeft),
-    status: getStatus(s.daysLeft),
-  }));
-
-  const updateSub = (id, patch) =>
-    setSubs((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
-
-  const sendReminder = (row) => {
-    updateSub(row.id, { reminderSent: true });
-    setToast(`Renewal reminder sent to ${row.company}`);
-  };
-
-  // Renewal: new period starts from the current due date (or today if expired)
-  const renewTarget = rows.find((r) => r.id === renewId);
-  const renewNewDaysLeft = renewTarget
-    ? Math.max(renewTarget.daysLeft, 0) + renewMonths * 30
-    : 0;
-
-  const confirmRenew = () => {
-    if (!renewTarget) return;
-    updateSub(renewTarget.id, {
-      daysLeft: renewNewDaysLeft,
-      reminderSent: false,
-    });
-    setToast(
-      `${renewTarget.company} renewed until ${dueLabel(renewNewDaysLeft)}`,
-    );
-    setRenewId(null);
-  };
-
-  const alerts = rows
-    .filter((r) => r.status === "Overdue" || r.status === "Due Soon")
-    .sort((a, b) => a.daysLeft - b.daysLeft);
-
   const columns = [
     { label: "Company", key: "company", width: 220, render: companyCell },
-    { label: "Plan", key: "plan", width: 100 },
-    { label: "Amount", key: "amount", width: 110 },
-    { label: "Due Date", key: "dueDate", width: 120 },
     {
-      label: "Days Left",
-      key: "daysLeft",
-      width: 130,
-      render: (v) => daysLeftCell(v),
+      label: "Plan",
+      key: "plan",
+      width: 170,
+      render: (plan) => {
+        if (!plan?.name) return <span className="text-gray-400">—</span>;
+        return (
+          <HoverDetail
+            title="Plan Details"
+            label={plan.name}
+            icon="mdi:shield-star-outline"
+            items={[
+              { label: "Name", value: plan.name },
+              { label: "Code", value: plan.code, badge: true },
+            ]}
+          />
+        );
+      },
     },
     {
-      label: "Auto Renew",
-      key: "autoRenew",
-      width: 100,
-      render: (v, row) => (
-        <Toggle
-          checked={v}
-          label={`Auto renew for ${row.company}`}
-          onChange={() => updateSub(row.id, { autoRenew: !v })}
-        />
-      ),
+      label: "Billing Period",
+      key: "billingPeriod",
+      width: 150,
+      render: (bp) => {
+        if (!bp?.name) return <span className="text-gray-400">—</span>;
+        return (
+          <HoverDetail
+            title="Billing Details"
+            label={bp.name}
+            icon="mdi:calendar-clock"
+            items={[
+              { label: "Name", value: bp.name },
+              { label: "Code", value: bp.code, badge: true },
+              {
+                label: "Duration",
+                value: `${bp.months} month${plural(bp.months)}`,
+              },
+            ]}
+          />
+        );
+      },
+    },
+    { label: "Amount", key: "amount", width: 120 },
+    { label: "Due Date", key: "dueDate", width: 130 },
+    {
+      label: "Balance Days",
+      key: "daysLeft",
+      width: 140,
+      render: (v) => balanceDaysCell(v),
     },
     {
       label: "Status",
       key: "status",
-      width: 100,
+      width: 110,
       render: (v) => statusPill(v),
-    },
-    {
-      label: "Actions",
-      key: "actions",
-      width: 190,
-      render: (_, row) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              setRenewId(row.id);
-              setRenewMonths(12);
-            }}
-            className="px-3 py-1.5 text-[11px] rounded-lg bg-black text-white hover:bg-gray-800 whitespace-nowrap"
-          >
-            Renew
-          </button>
-          <button
-            onClick={() => sendReminder(row)}
-            disabled={row.reminderSent}
-            className="px-3 py-1.5 text-[11px] rounded-lg border text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-          >
-            {row.reminderSent ? "Reminded" : "Remind"}
-          </button>
-        </div>
-      ),
     },
   ];
 
-  const filtered = rows.filter((r) => r.company.toLowerCase().includes(q));
+  const filtered = subs.filter((r) => r.company?.toLowerCase().includes(q));
 
   return (
     <div className="flex-1 grid grid-cols-1 gap-4 px-4 pb-4 bg-[#f9fafb] rounded-xl w-full mx-auto font-[Poppins]">
       {/* Title + actions */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <h3 className="text-base text-gray-800">Subscription Management</h3>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-2">
+        <h3 className="text-base font-semibold text-gray-800">
+          Subscription Management
+        </h3>
 
         <div className="flex items-center gap-2">
           <SearchBox value={search} onChange={setSearch} />
@@ -276,12 +315,33 @@ function SubscriptionsTab() {
         </div>
       </div>
 
-      <UniversalTable
-        columns={columns}
-        data={filtered}
-        rowsPerPage={8}
-        className="rounded-lg shadow-sm"
-      />
+      {/* Table Section */}
+      {loading ? (
+        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-lg shadow-sm">
+          <Icon
+            icon="eos-icons:loading"
+            className="w-6 h-6 animate-spin text-gray-500 mb-2"
+          />
+          <p className="text-xs text-gray-500">Loading subscriptions...</p>
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center p-8 bg-white rounded-lg shadow-sm border border-red-100">
+          <p className="text-xs text-red-500 mb-3">{error}</p>
+          <button
+            onClick={fetchSubscriptions}
+            className="px-3 py-1.5 text-xs bg-black text-white rounded-lg hover:bg-gray-800"
+          >
+            Retry
+          </button>
+        </div>
+      ) : (
+        <UniversalTable
+          columns={columns}
+          data={filtered}
+          rowsPerPage={8}
+          className="rounded-lg shadow-sm"
+        />
+      )}
 
       {/* Notification settings modal */}
       <Modal
@@ -342,7 +402,7 @@ function SubscriptionsTab() {
             setIsSettingsOpen(false);
             setToast("Notification settings saved");
           }}
-          className="w-full bg-black text-white text-xs rounded-lg py-2.5 hover:bg-gray-800"
+          className="w-full bg-black text-white text-xs rounded-lg py-2.5 hover:bg-gray-800 transition-colors"
         >
           Save Settings
         </button>

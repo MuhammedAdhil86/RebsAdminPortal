@@ -1,35 +1,16 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "react-toastify";
 import { LOGO_URL } from "../../services/AssetService";
-import { loginCompany } from "../../services/AuthService";
-import useAuthStore from "../../store/authStore";
-
-/* "Remember me": the email is pre-filled on the next visit */
-const REMEMBERED_EMAIL_KEY = "remembered_email";
-
-const getRememberedEmail = () => {
-  try {
-    return localStorage.getItem(REMEMBERED_EMAIL_KEY) || "";
-  } catch {
-    return "";
-  }
-};
-
-const saveRememberedEmail = (email, remember) => {
-  try {
-    if (remember) localStorage.setItem(REMEMBERED_EMAIL_KEY, email);
-    else localStorage.removeItem(REMEMBERED_EMAIL_KEY);
-  } catch {
-    /* storage unavailable: ignore */
-  }
-};
+import { loginCompany, forgotPassword } from "../../services/AuthService";
 
 export default function LoginPage() {
   const navigate = useNavigate();
 
-  const [form, setForm] = useState(() => {
-    const saved = getRememberedEmail();
-    return { username: saved, password: "", remember: Boolean(saved) };
+  const [form, setForm] = useState({
+    username: "",
+    password: "",
+    remember: false,
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
@@ -58,23 +39,18 @@ export default function LoginPage() {
       setLoading(true);
       setError("");
 
-      // Choose where the session is stored BEFORE logging in:
-      // checked -> localStorage (stays after the browser closes)
-      // unchecked -> sessionStorage (cleared when the browser closes)
-      useAuthStore.getState().setRemember(form.remember);
-
       // Real API call to /platform/company/login via Cloudflare / Production
       await loginCompany({
         email: trimmedEmail,
         password: form.password,
       });
 
-      saveRememberedEmail(trimmedEmail, form.remember);
+      toast.success("Login successful");
 
       // Redirect immediately to dashboard on successful login
       navigate("/dashboard", { replace: true });
     } catch (err) {
-      setError(
+      toast.error(
         err.message ||
           "Invalid credentials or server connection failed. Please try again.",
       );
@@ -90,9 +66,24 @@ export default function LoginPage() {
       await new Promise((resolve) => setTimeout(resolve, 800));
       console.log("Google login clicked");
     } catch {
-      setError("Google sign-in failed. Please try again.");
+      toast.error("Google sign-in failed. Please try again.");
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  // Triggers POST /tenant/password/forgot (email is fixed in AuthService)
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+
+    try {
+      setError("");
+      await forgotPassword();
+      toast.success("Password reset email has been sent.");
+    } catch (err) {
+      toast.error(
+        err.message || "Could not send reset email. Please try again.",
+      );
     }
   };
 
@@ -133,7 +124,7 @@ export default function LoginPage() {
         >
           {/* Logo for mobile */}
           <div className="mb-6 flex items-center gap-3 lg:hidden">
-            <img src={LOGO_URL} alt="REBS logo" className="h-5 w-auto" />
+            <img src={LOGO_URL} alt="REBS logo" className="h-12 w-auto" />
           </div>
 
           <h1 className="text-2xl font-semibold text-ink">Welcome back</h1>
@@ -203,12 +194,14 @@ export default function LoginPage() {
             </label>
             <a
               href="#"
+              onClick={handleForgotPassword}
               className="font-medium text-brand hover:text-brand-hover"
             >
               Forgot password?
             </a>
           </div>
 
+          {/* Login button */}
           {/* Login button */}
           <button
             type="submit"

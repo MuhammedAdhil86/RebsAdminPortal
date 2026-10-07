@@ -25,13 +25,13 @@ export const apiEndpoints = {
   serviceList: "/teqbae/service/list",
   serviceAdd: "/teqbae/service/add", // PUT
   serviceDelete: (id) => `/teqbae/service/delete/${id}`,
-
+planOptions: "/tenant/subscriptions/plan-options",
   
   // Master data: Billing period
   billingPeriodList: "/teqbae/billing-period/list",
   billingPeriodAdd: "/teqbae/billing-period/add", // PUT
   billingPeriodDelete: (id) => `/teqbae/billing-period/delete/${id}`,
-
+  planOptions: "/tenant/subscription/plan-options", 
 // Master data: Subscription Plan
   subscriptionPlanList: "/teqbae/subscription-plan/list",
   subscriptionPlanAdd: "/teqbae/subscription-plan/add",
@@ -47,6 +47,30 @@ export const apiEndpoints = {
 planServicePricingList: "/teqbae/plan-service-pricing/list",
 planServicePricingAdd: "/teqbae/plan-service-pricing/add", // PUT: id 0 = create, id > 0 = update
 planServicePricingDelete: (id) => `/teqbae/plan-service-pricing/delete/${id}`,
+
+
+//supscription
+// Try with slash:
+tenantSubscriptionInfo: "/tenant/subscription/tenant-info",
+
+
+
+// Tenant / Company Subscription endpoints
+  activeTenants: "/tenant/subscription/active-tenants",
+  deleteTenantCompany: (companyId) =>
+    `/tenant/subscription/delete/${companyId}`,
+
+  updateSubscriptionStatus: (subscriptionId) =>
+    `/tenant/subscription/${subscriptionId}/update-status`,
+
+  updateSubscriptionStatus: (subscriptionId) =>
+    `/tenant/subscription/${subscriptionId}/update-status`,
+renewSubscription: (id) => `/subscriptions/${id}/renew`,
+ changeSubscriptionPlan: (subscriptionId) =>
+  `/tenant/subscription/${subscriptionId}/change-plan`,
+  // Enquiry Endpoints
+  deleteEnquiry: (enquiryId) =>
+    `/tenant/enquiry/delete/${enquiryId}`,
 };
 
 export default apiEndpoints;

@@ -1,6 +1,26 @@
+import axios from "axios";
 import apiClient, { CLOUDFLARE_URL, DEFAULT_BASE_URL } from "../api/AxiosClient";
 import { apiEndpoints } from "../api/ApiEndpoints";
 import useAuthStore from "../store/authStore";
+
+/**
+ * Cloudflare client
+ * Defined here because it was used below but never defined/imported
+ * (this was the "cloudflareClient is not defined" error).
+ * Attaches the Bearer token automatically when one exists.
+ */
+const cloudflareClient = axios.create({
+  baseURL: CLOUDFLARE_URL,
+  headers: { "Content-Type": "application/json" },
+});
+
+cloudflareClient.interceptors.request.use((config) => {
+  const token = useAuthStore.getState()?.accessToken;
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 /**
  * 1. Company Platform Login
@@ -30,11 +50,11 @@ export const loginCompany = async (credentials) => {
 /**
  * 2. Company Platform Logout
  * Target: [ACTIVE_BASE_URL]/platform/company/logout
- * Uses Bearer <access_token> automatically attached by apiClient
+ * Uses Bearer <access_token> attached by the client
  */
 export const logoutCompany = async () => {
   try {
-    await   cloudflareClient.post(apiEndpoints.logout);
+    await cloudflareClient.post(apiEndpoints.logout);
   } catch (error) {
     console.error("Logout request failed on server:", error);
   } finally {
@@ -44,12 +64,29 @@ export const logoutCompany = async () => {
 
 /**
  * 3. Tenant Forgot Password
- * Target: [ACTIVE_BASE_URL]/tenant/password/forgot
- * Request: { email }
+ * Target: [CLOUDFLARE_URL]/tenant/password/forgot
+ * Request: { email }  (static email for now)
  */
-export const forgotPassword = async (payload) => {
-  return await   cloudflareClient.post(apiEndpoints.forgotPassword, payload);
+const FORGOT_PASSWORD_EMAIL = "aswin100396@gmail.com";
+
+export const forgotPassword = async () => {
+  try {
+    const response = await cloudflareClient.post(
+      apiEndpoints.forgotPassword || "/tenant/password/forgot",
+      { email: FORGOT_PASSWORD_EMAIL },
+    );
+    return response?.data || response;
+  } catch (error) {
+    const data = error?.response?.data;
+    const message =
+      (typeof data?.detail === "string" && data.detail) ||
+      data?.message ||
+      error?.message ||
+      "Could not send reset email.";
+    throw new Error(message);
+  }
 };
+
 /**
  * Get all tenant enquiries
  * GET /tenant/enquiry/list-all
@@ -60,9 +97,10 @@ export const getEnquiries = async (params = {}) => {
   const response = await apiClient.get(apiEndpoints.getEnquiries, { params });
   return response?.data || response;
 };
+
 export const resetPassword = async ({ token, new_password }) => {
   try {
-    const response = await   cloudflareClient.post(apiEndpoints.resetPassword, {
+    const response = await cloudflareClient.post(apiEndpoints.resetPassword, {
       token,
       new_password,
     });

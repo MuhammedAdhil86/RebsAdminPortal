@@ -322,3 +322,14 @@ export const deletePlanServicePricing = async (id, config = {}) =>
   request("DELETE plan-service-pricing/delete", { id }, () =>
     cloudflareClient.delete(apiEndpoints.planServicePricingDelete(id), config),
   );
+
+  // DELETE /tenant/subscription/delete/{company_id}
+export const deleteTenantSubscription = async (companyId, config = {}) =>
+  request(`DELETE subscription/delete/${companyId}`, { companyId }, () =>
+    cloudflareClient.delete(
+      typeof apiEndpoints.deleteTenantSubscription === "function"
+        ? apiEndpoints.deleteTenantSubscription(companyId)
+        : `${apiEndpoints.deleteTenantSubscription}/${companyId}`,
+      config
+    )
+  );

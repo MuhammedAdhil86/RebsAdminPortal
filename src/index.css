@@ -1,8 +1,7 @@
- @import "tailwindcss";
+@import "tailwindcss";
 
 @theme {
   --color-brand: #8B0000;
-  
   --color-brand-hover: #b91422;
   --color-canvas: #f3f4f6;
   --color-surface: #ffffff;
@@ -10,7 +9,9 @@
   --color-ink: #111827;
   --color-muted: #6b7280;
 
+  /* Poppins is the default font for the whole project */
   --font-brand: "Poppins", system-ui, sans-serif;
+  --font-sans: "Poppins", system-ui, sans-serif;
 }
 
 :root {
@@ -27,6 +28,16 @@ body,
 
 body {
   color: #213547;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Poppins", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-weight: inherit;
+}

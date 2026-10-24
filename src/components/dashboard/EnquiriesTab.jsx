@@ -1,13 +1,9 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Icon } from "@iconify/react";
-import {
-  UniversalTable,
-  SearchBox,
-  statusPill,
-  nameCell,
-} from "./CompaniesTab";
+import { UniversalTable, SearchBox, statusPill } from "./CompaniesTab";
 import DeleteConfirmModal from "../modals/DeleteConfirmModal"; // adjust path as needed
 import { getEnquiries, deleteEnquiry } from "../../services/Enquiries";
+import { showSuccess, showError } from "../../utils/toest";
 
 /* ------------------------------------------------------------------ */
 /*  HELPERS                                                           */
@@ -41,13 +37,6 @@ function EnquiriesTab() {
 
   // Delete modal request object: { singular, name, onConfirm } | null
   const [deleteRequest, setDeleteRequest] = useState(null);
-  const [toast, setToast] = useState("");
-
-  useEffect(() => {
-    if (!toast) return undefined;
-    const t = setTimeout(() => setToast(""), 2600);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   const loadEnquiries = useCallback(async () => {
     setLoading(true);
@@ -73,13 +62,15 @@ function EnquiriesTab() {
       name: row.company || row.name,
       onConfirm: async () => {
         try {
-          await deleteEnquiry(row.id);
+          await deleteEnquiry(row.id, { silent: true });
           setEnquiries((prev) => prev.filter((item) => item.id !== row.id));
-          setToast(`Enquiry for "${row.company}" deleted successfully`);
+          showSuccess(`Enquiry for "${row.company}" deleted successfully`);
           return true; // closes modal on success
         } catch (err) {
           console.error("Failed to delete enquiry:", err);
-          setToast("Failed to delete enquiry. Please try again.");
+          showError(
+            err?.message || "Failed to delete enquiry. Please try again.",
+          );
           return false; // keeps modal open if failed
         }
       },
@@ -89,23 +80,30 @@ function EnquiriesTab() {
   const q = search.toLowerCase();
 
   const columns = [
-    { label: "Contact", key: "name", width: 160, render: nameCell },
-    { label: "Company", key: "company", width: 170 },
-    { label: "Email", key: "email", width: 220 },
-    { label: "Type", key: "type", width: 180 },
-    { label: "Services", key: "services", width: 150 },
+    { label: "Company", key: "company", width: 210, align: "left" },
+    {
+      label: "Contact",
+      key: "name",
+      width: 190,
+      align: "center",
+    },
+    { label: "Email", key: "email", width: 230, align: "center" },
+    { label: "Type", key: "type", width: 180, align: "center" },
+    { label: "Services", key: "services", width: 170, align: "center" },
     {
       label: "Payment",
       key: "status",
       width: 110,
+      align: "center",
       render: (v) => statusPill(v),
     },
     {
       label: "Actions",
       key: "actions",
       width: 90,
+      align: "center",
       render: (_, row) => (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-center gap-2">
           <button
             type="button"
             onClick={() => promptDelete(row)}
@@ -189,13 +187,6 @@ function EnquiriesTab() {
           request={deleteRequest}
           onClose={() => setDeleteRequest(null)}
         />
-      )}
-
-      {/* Feedback Toast */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-[70] bg-black text-white text-xs px-4 py-3 rounded-lg shadow-lg">
-          {toast}
-        </div>
       )}
     </div>
   );

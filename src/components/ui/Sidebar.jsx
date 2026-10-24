@@ -79,23 +79,20 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
           icon: icons.clientDashboard,
           path: "/dashboard",
         },
-        { title: "All Clients", icon: icons.allClients },
+
         {
           title: "Configuration",
           icon: icons.configuration,
           path: "/configuration",
         },
-        { title: "Add Client", icon: icons.addClient },
-        { title: "Client Requests", icon: icons.clientRequests },
+
         {
           title: "Subscriptions",
           icon: icons.subscriptions,
           path: "/subscriptions",
         },
         { title: "Invoices & Billing", icon: icons.invoices },
-        { title: "Contracts", icon: icons.contracts },
-        { title: "Support Tickets", icon: icons.tickets },
-        { title: "Client Reports", icon: icons.clientReports },
+
         { title: "Activity Logs", icon: icons.activity },
       ],
     },
@@ -134,7 +131,7 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
             <span
               className={`text-white text-lg font-normal ${hideWhenCollapsed}`}
             >
-              REBS HR
+              REBS Platform
             </span>
           </div>
 

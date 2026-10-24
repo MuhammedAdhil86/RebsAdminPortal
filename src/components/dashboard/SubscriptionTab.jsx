@@ -7,7 +7,12 @@ import {
   statusPill,
   companyCell,
 } from "./CompaniesTab";
-import { getTenantSubscriptions } from "../../services/SubscriptionService";
+import DeleteConfirmModal from "../modals/DeleteConfirmModal"; // adjust path as needed
+import {
+  getTenantSubscriptions,
+  deleteTenantSubscription,
+} from "../../services/SubscriptionService";
+import { showSuccess, showError } from "../../utils/toest";
 
 const REMINDER_DAYS = [
   { key: 30, label: "30 days before due date" },
@@ -198,7 +203,9 @@ function SubscriptionsTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
-  const [toast, setToast] = useState("");
+
+  // Delete modal request object: { singular, name, onConfirm } | null
+  const [deleteRequest, setDeleteRequest] = useState(null);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState({
@@ -225,20 +232,43 @@ function SubscriptionsTab() {
     fetchSubscriptions();
   }, [fetchSubscriptions]);
 
-  useEffect(() => {
-    if (!toast) return undefined;
-    const t = setTimeout(() => setToast(""), 2600);
-    return () => clearTimeout(t);
-  }, [toast]);
+  // DELETE /tenant/subscription/delete/{company_id}
+  const promptDelete = (row) => {
+    setDeleteRequest({
+      singular: "Subscription",
+      name: row.company,
+      onConfirm: async () => {
+        try {
+          await deleteTenantSubscription(row.id, { silent: true });
+          setSubs((prev) => prev.filter((item) => item.id !== row.id));
+          showSuccess(`Subscription for "${row.company}" deleted successfully`);
+          return true; // closes modal on success
+        } catch (err) {
+          console.error("Failed to delete subscription:", err);
+          showError(
+            err?.message || "Failed to delete subscription. Please try again.",
+          );
+          return false; // keeps modal open if failed
+        }
+      },
+    });
+  };
 
   const q = search.toLowerCase();
 
   const columns = [
-    { label: "Company", key: "company", width: 220, render: companyCell },
+    {
+      label: "Company",
+      key: "company",
+      width: 230,
+      align: "left",
+      render: companyCell,
+    },
     {
       label: "Plan",
       key: "plan",
       width: 170,
+      align: "center",
       render: (plan) => {
         if (!plan?.name) return <span className="text-gray-400">—</span>;
         return (
@@ -258,6 +288,7 @@ function SubscriptionsTab() {
       label: "Billing Period",
       key: "billingPeriod",
       width: 150,
+      align: "center",
       render: (bp) => {
         if (!bp?.name) return <span className="text-gray-400">—</span>;
         return (
@@ -277,19 +308,42 @@ function SubscriptionsTab() {
         );
       },
     },
-    { label: "Amount", key: "amount", width: 120 },
-    { label: "Due Date", key: "dueDate", width: 130 },
+    { label: "Amount", key: "amount", width: 120, align: "center" },
+    { label: "Due Date", key: "dueDate", width: 130, align: "center" },
     {
       label: "Balance Days",
       key: "daysLeft",
-      width: 140,
+      width: 150,
+      align: "center",
       render: (v) => balanceDaysCell(v),
     },
     {
       label: "Status",
       key: "status",
       width: 110,
+      align: "center",
       render: (v) => statusPill(v),
+    },
+    {
+      label: "Actions",
+      key: "actions",
+      width: 90,
+      align: "center",
+      render: (_, row) => (
+        <div className="flex items-center justify-center">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              promptDelete(row);
+            }}
+            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            title={`Delete subscription for ${row.company}`}
+          >
+            <Icon icon="heroicons:trash-20-solid" className="w-4 h-4" />
+          </button>
+        </div>
+      ),
     },
   ];
 
@@ -400,7 +454,7 @@ function SubscriptionsTab() {
         <button
           onClick={() => {
             setIsSettingsOpen(false);
-            setToast("Notification settings saved");
+            showSuccess("Notification settings saved");
           }}
           className="w-full bg-black text-white text-xs rounded-lg py-2.5 hover:bg-gray-800 transition-colors"
         >
@@ -408,11 +462,12 @@ function SubscriptionsTab() {
         </button>
       </Modal>
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-[70] bg-black text-white text-xs px-4 py-3 rounded-lg shadow-lg">
-          {toast}
-        </div>
+      {/* Portal Delete Confirmation Modal */}
+      {deleteRequest && (
+        <DeleteConfirmModal
+          request={deleteRequest}
+          onClose={() => setDeleteRequest(null)}
+        />
       )}
     </div>
   );

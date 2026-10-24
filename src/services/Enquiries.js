@@ -2,6 +2,46 @@ import apiClient from "../api/AxiosClient";
 import { apiEndpoints } from "../api/ApiEndpoints";
 
 /**
+ * Authorization tokens are attached automatically by apiClient, and its
+ * response interceptor already returns response.data.
+ *
+ * Console logging: request, response and errors are logged in development,
+ * or in production when VITE_DEBUG_LOGS=true is set. Errors always log.
+ */
+
+/* ───────────── Debug logging ───────────── */
+
+const DEBUG = import.meta.env.DEV || import.meta.env.VITE_DEBUG_LOGS === "true";
+
+const TAG = "[Enquiry]";
+
+const request = async (label, payload, run) => {
+  if (DEBUG) {
+    console.log(`${TAG} → ${label}`, payload ?? "(none)");
+  }
+
+  try {
+    const response = await run();
+
+    if (DEBUG) {
+      console.log(`${TAG} ← ${label} OK`, response);
+    }
+
+    return response;
+  } catch (err) {
+    // err is the Error created by the AxiosClient response interceptor
+    console.error(`${TAG} ✗ ${label} FAILED`, {
+      status: err?.status ?? "no response (network / CORS / server down)",
+      message: err?.message,
+      data: err?.data,
+    });
+    throw err;
+  }
+};
+
+/* ───────────── Tenant Enquiries ───────────── */
+
+/**
  * Get all tenant enquiries
  * GET /tenant/enquiry/list-all
  * Headers: Authorization: Bearer <accessToken> (automatically injected)
@@ -33,7 +73,11 @@ export const getEnquiryServiceSummary = async (params = {}) => {
   list.forEach((enquiry) => {
     if (enquiry.is_paid) paid += 1;
     (enquiry.services || []).forEach((s) => {
-      const current = byService.get(s.id) || { id: s.id, name: s.name, count: 0 };
+      const current = byService.get(s.id) || {
+        id: s.id,
+        name: s.name,
+        count: 0,
+      };
       current.count += 1;
       byService.set(s.id, current);
     });
@@ -47,15 +91,18 @@ export const getEnquiryServiceSummary = async (params = {}) => {
   };
 };
 
-/* ───────────── Tenant Enquiries ───────────── */
-
 // DELETE /tenant/enquiry/delete/{enquiry_id}
-export const deleteEnquiry = async (enquiryId, config = {}) =>
-  request(`DELETE enquiry/delete/${enquiryId}`, { enquiryId }, () =>
-    cloudflareClient.delete(
+export const deleteEnquiry = async (enquiryId, config = {}) => {
+  if (enquiryId === undefined || enquiryId === null || enquiryId === "") {
+    throw new Error("A valid enquiry id is required.");
+  }
+
+  return request(`DELETE enquiry/delete/${enquiryId}`, { enquiryId }, () =>
+    apiClient.delete(
       typeof apiEndpoints.deleteEnquiry === "function"
         ? apiEndpoints.deleteEnquiry(enquiryId)
         : `${apiEndpoints.deleteEnquiry}/${enquiryId}`,
-      config
-    )
+      config,
+    ),
   );
+};

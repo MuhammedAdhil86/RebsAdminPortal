@@ -59,16 +59,6 @@ export const getActiveTenants = async (config = {}) =>
     apiClient.get(apiEndpoints.activeTenants, config),
   );
 
-// DELETE /tenant/subscription/delete/{company_id}
-export const deleteTenantSubscription = async (companyId, config = {}) =>
-  request(`DELETE subscription/delete/${companyId}`, { companyId }, () =>
-    apiClient.delete(
-      typeof apiEndpoints.deleteTenantSubscription === "function"
-        ? apiEndpoints.deleteTenantSubscription(companyId)
-        : `${apiEndpoints.deleteTenantSubscription}/${companyId}`,
-      config,
-    ),
-  );
 // PATCH /tenant/subscription/{subscription_id}/update-status
 // payload: { status: "ACTIVE" | "SUSPENDED" }
 export const updateSubscriptionStatus = async (
@@ -171,4 +161,15 @@ export const getUpcomingSubscriptions = async (companyId, config = {}) =>
           : `${apiEndpoints.upcomingSubscriptions}/${companyId}`,
         config,
       ),
+  );
+
+// DELETE /tenant/subscription/delete/{company_id}
+export const deleteTenantSubscription = async (companyId, config = {}) =>
+  request(`DELETE subscription/delete/${companyId}`, { companyId }, () =>
+    apiClient.delete(
+      typeof apiEndpoints.deleteTenantSubscription === "function"
+        ? apiEndpoints.deleteTenantSubscription(companyId)
+        : `${apiEndpoints.deleteTenantSubscription}/${companyId}`,
+      config,
+    ),
   );

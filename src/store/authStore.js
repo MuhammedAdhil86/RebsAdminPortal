@@ -45,22 +45,33 @@ export const useAuthStore = create(
       accessToken: null,
       refreshToken: null,
       expiresAt: null,
-      user: null,
+      user: null, // { email, name, role }
       isAuthenticated: false,
       remember: false,
 
       // Call BEFORE login so the tokens are saved in the right storage.
       setRemember: (remember) => set({ remember: Boolean(remember) }),
 
-      login: ({ accessToken, refreshToken, expiresAt, email }) => {
+      login: ({
+        accessToken,
+        refreshToken,
+        expiresAt,
+        email,
+        name = null,
+        role = null,
+      }) => {
         set({
           accessToken,
           refreshToken,
           expiresAt,
-          user: { email },
+          user: { email, name, role },
           isAuthenticated: true,
         });
       },
+
+      // Update profile fields later without touching the tokens
+      setUser: (patch = {}) =>
+        set((state) => ({ user: { ...(state.user || {}), ...patch } })),
 
       logout: () => {
         set({
@@ -79,5 +90,30 @@ export const useAuthStore = create(
     },
   ),
 );
+
+/**
+ * One place that turns the stored user into display data, so the sidebar,
+ * the dashboard header and any other component always show the same user.
+ * Same logic the sidebar always used: the logged-in email is the display name.
+ *
+ *   const { name, email, role, avatarUrl } = useCurrentUser();
+ */
+export const useCurrentUser = () => {
+  // Reads `user.email`, and also a top-level `email` if your store has one
+  const email = useAuthStore((s) => s.user?.email ?? s.email);
+  const storedName = useAuthStore((s) => s.user?.name ?? s.name);
+  const storedRole = useAuthStore((s) => s.user?.role ?? s.role);
+
+  const name = storedName || email || "Admin User";
+
+  return {
+    name,
+    email: email || "",
+    role: storedRole || "Admin",
+    avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(
+      name,
+    )}&background=random`,
+  };
+};
 
 export default useAuthStore;

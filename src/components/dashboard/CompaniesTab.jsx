@@ -72,13 +72,11 @@ export const nameCell = (val, row = {}) => (
 );
 
 export const companyCell = (val) => (
-  <div className="flex items-center gap-2.5">
+  <div className="flex items-center gap-2.5 min-w-0">
     <div className="w-8 h-8 rounded-full bg-black text-white text-[11px] font-medium flex items-center justify-center shrink-0">
       {initials(val)}
     </div>
-    <span className="truncate max-w-[200px] font-medium text-gray-900">
-      {val}
-    </span>
+    <span className="truncate font-medium text-gray-900">{val}</span>
   </div>
 );
 
@@ -138,6 +136,9 @@ export { DashboardTable as UniversalTable };
 /* ------------------------------------------------------------------ */
 /*  DATA ADAPTER FOR API TENANTS                                      */
 /* ------------------------------------------------------------------ */
+
+// Number of address characters shown in the table (full text shows on hover)
+const ADDRESS_PREVIEW_LENGTH = 10;
 
 const mapApiTenantToCompany = (t) => ({
   id: t.company_id,
@@ -236,48 +237,74 @@ export function CompaniesTab() {
     {
       label: "Company",
       key: "company",
-      width: 220,
+      width: 230,
+      align: "left",
       // Clickable name as a fallback in case the table has no row-click support
       render: (v, row) => (
         <button
           type="button"
-          onClick={() => setSelectedId(row.id)}
-          className="text-left hover:underline"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedId(row.id);
+          }}
+          className="text-left hover:underline min-w-0 max-w-full"
           title={`View ${v}`}
         >
           {companyCell(v)}
         </button>
       ),
     },
-    { label: "Contact Person", key: "contact", width: 150 },
-    { label: "Email", key: "email", width: 200 },
-    { label: "Phone", key: "phone", width: 140 },
-    { label: "Organization Type", key: "organisationType", width: 190 },
-    { label: "Address", key: "address", width: 180 },
+    { label: "Contact Person", key: "contact", width: 160, align: "center" },
+    { label: "Email", key: "email", width: 230, align: "center" },
+    { label: "Phone", key: "phone", width: 140, align: "center" },
+    {
+      label: "Organization Type",
+      key: "organisationType",
+      width: 180,
+      align: "center",
+    },
+    {
+      label: "Address",
+      key: "address",
+      width: 140,
+      align: "center",
+      // Show only the first 10 characters; the full address appears on hover
+      render: (v) => {
+        const full = v && v !== "—" ? String(v) : "";
+        if (!full) return <span>—</span>;
+        return (
+          <span title={full} className="cursor-default truncate">
+            {full.length > ADDRESS_PREVIEW_LENGTH
+              ? `${full.slice(0, ADDRESS_PREVIEW_LENGTH)}…`
+              : full}
+          </span>
+        );
+      },
+    },
     {
       label: "Status",
       key: "status",
-      width: 100,
+      width: 110,
+      align: "center",
       render: (v) => statusPill(v),
     },
     {
       label: "Actions",
       key: "actions",
-      width: 80,
+      width: 90,
+      align: "center",
       render: (_, row) => (
-        <div className="flex items-center justify-center">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              promptDeleteCompany(row);
-            }}
-            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-            title={`Delete ${row.company}`}
-          >
-            <Icon icon="heroicons:trash-20-solid" className="w-4 h-4" />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            promptDeleteCompany(row);
+          }}
+          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+          title={`Delete ${row.company}`}
+        >
+          <Icon icon="heroicons:trash-20-solid" className="w-4 h-4" />
+        </button>
       ),
     },
   ];

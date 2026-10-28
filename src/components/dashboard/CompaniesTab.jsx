@@ -2,12 +2,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import { Icon } from "@iconify/react";
 import { Search } from "lucide-react";
 import DashboardTable from "../../utils/DashboardTable";
-import DeleteConfirmModal from "../../components/modals/DeleteConfirmModal"; // adjust path to DeleteConfirmModal if needed
 import CompanyDetailsView from "./CompanyDetailsView"; // adjust path if needed
-import {
-  getActiveTenants,
-  deleteTenantSubscription,
-} from "../../services/SubscriptionService";
+import { getActiveTenants } from "../../services/SubscriptionService";
 
 /* ------------------------------------------------------------------ */
 /*  LEGACY EXPORT STUBS (Prevents other dashboard imports from breaking)*/
@@ -153,7 +149,7 @@ const mapApiTenantToCompany = (t) => ({
 });
 
 /* ------------------------------------------------------------------ */
-/*  MAIN COMPANIES TAB COMPONENT                                      */
+/*  MAIN COMPANIES TAB COMPONENT (READ-ONLY)                          */
 /* ------------------------------------------------------------------ */
 
 export function CompaniesTab() {
@@ -164,16 +160,6 @@ export function CompaniesTab() {
 
   // Selected company (details view)
   const [selectedId, setSelectedId] = useState(null);
-
-  // Delete modal state
-  const [deleteRequest, setDeleteRequest] = useState(null);
-  const [toast, setToast] = useState("");
-
-  useEffect(() => {
-    if (!toast) return undefined;
-    const t = setTimeout(() => setToast(""), 2600);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   const fetchCompanies = useCallback(async () => {
     try {
@@ -193,29 +179,6 @@ export function CompaniesTab() {
   useEffect(() => {
     fetchCompanies();
   }, [fetchCompanies]);
-
-  // Connect Delete Modal to deleteTenantSubscription API
-  const promptDeleteCompany = (row) => {
-    setDeleteRequest({
-      singular: "Company",
-      name: row.company,
-      onConfirm: async () => {
-        try {
-          await deleteTenantSubscription(row.id);
-          // Remove from local list immediately
-          setCompaniesList((prev) => prev.filter((item) => item.id !== row.id));
-          // If deleted while the details view is open, go back to the list
-          setSelectedId((cur) => (cur === row.id ? null : cur));
-          setToast(`Company "${row.company}" deleted successfully`);
-          return true; // closes DeleteConfirmModal
-        } catch (err) {
-          console.error("Failed to delete company:", err);
-          setToast("Failed to delete company. Please try again.");
-          return false; // keeps modal open
-        }
-      },
-    });
-  };
 
   const q = search.toLowerCase();
 
@@ -288,25 +251,6 @@ export function CompaniesTab() {
       align: "center",
       render: (v) => statusPill(v),
     },
-    {
-      label: "Actions",
-      key: "actions",
-      width: 90,
-      align: "center",
-      render: (_, row) => (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            promptDeleteCompany(row);
-          }}
-          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-          title={`Delete ${row.company}`}
-        >
-          <Icon icon="heroicons:trash-20-solid" className="w-4 h-4" />
-        </button>
-      ),
-    },
   ];
 
   return (
@@ -378,21 +322,6 @@ export function CompaniesTab() {
             />
           )}
         </>
-      )}
-
-      {/* Portal-based Delete Confirmation Modal */}
-      {deleteRequest && (
-        <DeleteConfirmModal
-          request={deleteRequest}
-          onClose={() => setDeleteRequest(null)}
-        />
-      )}
-
-      {/* Action Toast */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-[70] bg-black text-white text-xs px-4 py-3 rounded-lg shadow-lg">
-          {toast}
-        </div>
       )}
     </div>
   );

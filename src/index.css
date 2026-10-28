@@ -9,9 +9,12 @@
   --color-ink: #111827;
   --color-muted: #6b7280;
 
-  /* Poppins is the default font for the whole project */
+  /* Poppins Regular is the only font and weight in the project */
   --font-brand: "Poppins", system-ui, sans-serif;
   --font-sans: "Poppins", system-ui, sans-serif;
+
+  --font-weight-*: initial;
+  --font-weight-normal: 400;
 }
 
 :root {
@@ -37,7 +40,16 @@ body {
 button,
 input,
 select,
-textarea {
+textarea,
+table {
   font-family: inherit;
   font-weight: inherit;
+}
+
+/* Force Poppins Regular (400) everywhere, including th, strong, b, headings */
+*,
+*::before,
+*::after {
+  font-family: "Poppins", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-weight: 400 !important;
 }

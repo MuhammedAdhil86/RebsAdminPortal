@@ -18,10 +18,20 @@ import { DEBUG } from "../../services/MasterService";
  *
  *   section = {
  *     key, label, singular, icon,
- *     columns?: [{ key, label, get?(item), primary?, searchable? }],
+ *     columns?: [{ key, label, get?(item), render?(item), primary?, searchable? }],
  *     fields: [{ name, label, type, options, placeholder, hint, maxLength,
- *                required, unique, transform, pattern, patternMessage, initial }],
+ *                required, unique, transform, pattern, patternMessage, initial,
+ *                defaultValue }],
+ *       field.type: "text" (default) | "select" | "textarea" | "multiselect"
+ *       multiselect: options = [{ value, label }], value is an array
  *     toPayload: (values) => object sent to the API (without id),
+ *       field.options (select): array, or ({ values, items, item }) => array;
+ *         an option can set disabled: true
+ *       field.disabled: boolean, or ({ values, item, isEdit }) => boolean
+ *       field.clears: ["otherField"] resets those fields when this one changes
+ *     validate?: (values, { items, item }) => { fieldName: "message" },
+ *     extraActions?: [{ key, title(item), onClick(item, { api, refresh }),
+ *                       variant?: "switch" (needs checked(item)) | icon button (needs icon(item)) }],
  *   }
  *
  *   api = { list(), create(payload), update(payload), remove(id) }
@@ -83,8 +93,8 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
         item
           ? ((typeof f.initial === "function"
               ? f.initial(item)
-              : item[f.name]) ?? "")
-          : "",
+              : item[f.name]) ?? (f.type === "multiselect" ? [] : ""))
+          : (f.defaultValue ?? (f.type === "multiselect" ? [] : "")),
       ]),
     ),
   );
@@ -124,7 +134,44 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
 
   const handleChange = (field, raw) => {
     const value = field.transform === "uppercase" ? raw.toUpperCase() : raw;
-    setValues((prev) => ({ ...prev, [field.name]: value }));
+    setValues((prev) => {
+      const next = { ...prev, [field.name]: value };
+      // field.clears: names of dependent fields to reset when this one changes
+      (field.clears || []).forEach((name) => {
+        next[name] = "";
+      });
+      return next;
+    });
+    if (errors[field.name]) {
+      setErrors((prev) => ({ ...prev, [field.name]: "" }));
+    }
+  };
+
+  // field.options may be an array, or a function ({ values, items, item }) => array
+  // (use it when options depend on other fields). An option can set disabled: true.
+  const resolveOptions = (field) =>
+    (typeof field.options === "function"
+      ? field.options({ values, items, item })
+      : field.options) || [];
+
+  // field.disabled may be a boolean, or a function ({ values, item, isEdit }) => boolean
+  const isFieldDisabled = (field) =>
+    typeof field.disabled === "function"
+      ? field.disabled({ values, item, isEdit })
+      : Boolean(field.disabled);
+
+  // multiselect: add / remove one option value from the array
+  const toggleMulti = (field, optValue) => {
+    setValues((prev) => {
+      const current = Array.isArray(prev[field.name]) ? prev[field.name] : [];
+      const exists = current.some((v) => String(v) === String(optValue));
+      return {
+        ...prev,
+        [field.name]: exists
+          ? current.filter((v) => String(v) !== String(optValue))
+          : [...current, optValue],
+      };
+    });
     if (errors[field.name]) {
       setErrors((prev) => ({ ...prev, [field.name]: "" }));
     }
@@ -134,6 +181,17 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
     const found = {};
 
     fields.forEach((field) => {
+      if (field.type === "multiselect") {
+        const selected = Array.isArray(values[field.name])
+          ? values[field.name]
+          : [];
+        if (field.required && selected.length === 0) {
+          found[field.name] =
+            `Select at least one ${field.label.toLowerCase()}.`;
+        }
+        return;
+      }
+
       const value = String(values[field.name] ?? "").trim();
 
       if (field.required && !value) {
@@ -165,6 +223,11 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
       }
     });
 
+    // Optional cross-field check: section.validate(values, { items, item }) => { field: message }
+    if (section.validate && Object.keys(found).length === 0) {
+      Object.assign(found, section.validate(values, { items, item }) || {});
+    }
+
     log("modal validate", { values, errors: found });
     return found;
   };
@@ -183,7 +246,12 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
     }
 
     const cleaned = Object.fromEntries(
-      fields.map((f) => [f.name, String(values[f.name] ?? "").trim()]),
+      fields.map((f) => [
+        f.name,
+        Array.isArray(values[f.name])
+          ? values[f.name]
+          : String(values[f.name] ?? "").trim(),
+      ]),
     );
 
     const ok = await onSubmit(cleaned);
@@ -195,7 +263,7 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
 
   return createPortal(
     <div
-      className={`poppins-root fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px] transition-opacity duration-200 ${
+      className={`poppins-root font-sans font-normal fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px] transition-opacity duration-200 ${
         visible ? "opacity-100" : "opacity-0"
       }`}
       onMouseDown={(e) => {
@@ -219,7 +287,10 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
               <Icon icon={icon} className="w-6 h-6" />
             </div>
             <div>
-              <h2 id="item-modal-title" className="text-lg text-gray-900">
+              <h2
+                id="item-modal-title"
+                className="text-lg font-normal text-gray-900"
+              >
                 {isEdit ? "Edit" : "Add"} {singular.toLowerCase()}
               </h2>
               <p className="text-xs text-gray-500 mt-0.5">
@@ -250,20 +321,54 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
               <div key={field.name} className="flex flex-col gap-1.5">
                 <label
                   htmlFor={`field-${field.name}`}
-                  className="text-xs font-medium text-gray-700"
+                  className="text-xs font-normal text-gray-700"
                 >
                   {field.label}
                   {field.required && <span className="text-red-500"> *</span>}
                 </label>
 
-                {field.type === "select" ? (
+                {field.type === "multiselect" ? (
+                  <div
+                    id={`field-${field.name}`}
+                    className={`max-h-40 overflow-y-auto border rounded-lg bg-white divide-y divide-gray-100 ${
+                      errors[field.name] ? "border-red-400" : "border-gray-200"
+                    }`}
+                  >
+                    {!field.options || field.options.length === 0 ? (
+                      <div className="px-3.5 py-3 text-xs text-gray-400">
+                        {field.emptyText || "No options available."}
+                      </div>
+                    ) : (
+                      field.options.map((opt) => {
+                        const checked = (values[field.name] || []).some(
+                          (v) => String(v) === String(opt.value),
+                        );
+                        return (
+                          <label
+                            key={opt.value}
+                            className="flex items-center gap-2.5 px-3.5 py-2 text-sm text-gray-700 cursor-pointer hover:bg-gray-50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={submitting}
+                              onChange={() => toggleMulti(field, opt.value)}
+                              className="accent-black"
+                            />
+                            {opt.label}
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                ) : field.type === "select" ? (
                   <select
                     id={`field-${field.name}`}
                     ref={(el) => {
                       inputRefs.current[field.name] = el;
                     }}
                     value={values[field.name]}
-                    disabled={submitting}
+                    disabled={submitting || isFieldDisabled(field)}
                     onChange={(e) => handleChange(field, e.target.value)}
                     aria-invalid={Boolean(errors[field.name])}
                     className={`w-full px-3.5 py-2.5 text-sm border rounded-lg bg-white focus:outline-none focus:border-black focus:ring-4 focus:ring-black/5 disabled:opacity-50 transition-shadow ${
@@ -274,8 +379,12 @@ function ItemModal({ section, item, items, submitting, onClose, onSubmit }) {
                       {field.placeholder ||
                         `Select ${field.label.toLowerCase()}`}
                     </option>
-                    {field.options?.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
+                    {resolveOptions(field).map((opt) => (
+                      <option
+                        key={opt.value}
+                        value={opt.value}
+                        disabled={opt.disabled}
+                      >
                         {opt.label}
                       </option>
                     ))}
@@ -407,6 +516,7 @@ export default function MasterDataPanel({ section, api, requestDelete }) {
         label: c.label,
         get: (item) => (c.get ? c.get(item) : item[c.key]),
         primary: Boolean(c.primary),
+        render: c.render,
         searchable: c.searchable !== false && !/(_at|_on)$/.test(c.key),
       }));
     }
@@ -514,7 +624,7 @@ export default function MasterDataPanel({ section, api, requestDelete }) {
   // No window.confirm fallback: if a tab forgets to pass requestDelete,
   // it is reported immediately instead of silently using the browser popup.
   const askDelete = (item) => {
-    console.log("askDelete", {
+    log("askDelete", {
       section: key,
       requestDelete: typeof requestDelete,
     });
@@ -530,6 +640,28 @@ export default function MasterDataPanel({ section, api, requestDelete }) {
       name: itemLabel(item),
       onConfirm: () => handleDelete(item),
     });
+  };
+
+  // Optional per-row buttons declared by a tab through section.extraActions:
+  //   { key, title(item), icon(item), onClick(item, { api, refresh }) }
+  // onClick may return a string, which is shown as a success toast.
+  const runExtraAction = async (action, item) => {
+    log("extraAction", { section: key, action: action.key, item });
+    setSubmitting(true);
+    try {
+      const message = await action.onClick(item, {
+        api,
+        refresh: () => fetchItems(false),
+      });
+      if (typeof message === "string" && message) toast.success(message);
+    } catch (err) {
+      log("extraAction failed", err);
+      toast.error(
+        err.message || `Failed to ${action.title(item).toLowerCase()}`,
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const openAdd = () => {
@@ -548,7 +680,7 @@ export default function MasterDataPanel({ section, api, requestDelete }) {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 font-sans font-normal">
       {/* Toolbar: search (left) + add (right) */}
       <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="relative w-full sm:max-w-xs">
@@ -623,21 +755,22 @@ export default function MasterDataPanel({ section, api, requestDelete }) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
+            {/* Table text: Poppins Regular, 9px */}
+            <table className="w-full text-[10px] text-left font-sans font-normal">
               <thead>
-                <tr className="bg-gray-50/60 text-[11px] uppercase tracking-wider text-gray-500 border-b border-gray-100">
+                <tr className="bg-gray-50/60 text-[10px] uppercase tracking-wider text-gray-500 border-b border-gray-100">
                   {columns.map((col) => (
                     <th
                       key={col.key}
                       scope="col"
-                      className="px-5 py-2.5 font-medium whitespace-nowrap"
+                      className="px-5 py-2.5 font-normal whitespace-nowrap"
                     >
                       {col.label}
                     </th>
                   ))}
                   <th
                     scope="col"
-                    className="px-5 py-2.5 font-medium text-right"
+                    className="px-5 py-2.5 font-normal text-right"
                   >
                     Actions
                   </th>
@@ -654,29 +787,85 @@ export default function MasterDataPanel({ section, api, requestDelete }) {
                       {columns.map((col) => (
                         <td
                           key={col.key}
-                          className={`px-5 py-3.5 ${
+                          className={`px-5 py-3.5 text-[11px] font-normal ${
                             col.primary
                               ? "text-gray-800"
                               : "text-gray-500 whitespace-nowrap"
                           }`}
                         >
-                          {formatCell(col.key, col.get(item))}
+                          {col.render
+                            ? col.render(item)
+                            : formatCell(col.key, col.get(item))}
                         </td>
                       ))}
 
                       <td className="px-5 py-3.5">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Extra actions declared by the tab (switch or icon button) */}
+                          {section.extraActions?.map((action) => {
+                            if (action.variant === "switch") {
+                              const on = Boolean(action.checked(item));
+                              return (
+                                <button
+                                  key={action.key}
+                                  type="button"
+                                  role="switch"
+                                  aria-checked={on}
+                                  title={action.title(item)}
+                                  aria-label={`${action.title(item)} ${itemLabel(item)}`}
+                                  disabled={submitting}
+                                  onClick={() => runExtraAction(action, item)}
+                                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-4 focus-visible:ring-black/10 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                    on ? "bg-emerald-500" : "bg-gray-300"
+                                  }`}
+                                >
+                                  <span
+                                    className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                                      on
+                                        ? "translate-x-[18px]"
+                                        : "translate-x-0.5"
+                                    }`}
+                                  />
+                                </button>
+                              );
+                            }
+
+                            return (
+                              <button
+                                key={action.key}
+                                type="button"
+                                title={action.title(item)}
+                                disabled={submitting}
+                                aria-label={`${action.title(item)} ${itemLabel(item)}`}
+                                onClick={() => runExtraAction(action, item)}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-black hover:bg-black hover:text-white transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-black/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <Icon
+                                  icon={action.icon(item)}
+                                  className="w-4 h-4"
+                                />
+                              </button>
+                            );
+                          })}
+
+                          {section.extraActions?.length > 0 && (
+                            <span
+                              className="mx-0.5 h-4 w-px bg-gray-200"
+                              aria-hidden="true"
+                            />
+                          )}
+
                           <button
                             type="button"
                             title="Edit"
                             disabled={submitting}
                             aria-label={`Edit ${itemLabel(item)}`}
                             onClick={() => openEdit(item)}
-                            className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-black transition-colors disabled:opacity-40"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-black hover:bg-black hover:text-white transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-black/10 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             <Icon
                               icon="mdi:pencil-outline"
-                              className="w-[18px] h-[18px]"
+                              className="w-4 h-4"
                             />
                           </button>
 
@@ -686,11 +875,11 @@ export default function MasterDataPanel({ section, api, requestDelete }) {
                             disabled={submitting}
                             aria-label={`Delete ${itemLabel(item)}`}
                             onClick={() => askDelete(item)}
-                            className="p-2 rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-500 hover:border-red-600 hover:bg-red-600 hover:text-white transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             <Icon
                               icon="mdi:trash-can-outline"
-                              className="w-[18px] h-[18px]"
+                              className="w-4 h-4"
                             />
                           </button>
                         </div>

@@ -1,43 +1,21 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
 import { Icon } from "@iconify/react";
 import MasterDataTab from "../components/configpage/MasterDataTab"; // adjust path if needed
+import DeleteConfirmModal from "../components/modals/DeleteConfirmModal"; // adjust path if needed
+import {
+  getActiveTenants,
+  deleteTenantSubscription,
+} from "../services/SubscriptionService"; // adjust path if needed
 
 /* ------------------------------------------------------------------ */
-/*  MOCK DATA                                                         */
+/*  MOCK DATA (Teqbae tab only)                                       */
 /* ------------------------------------------------------------------ */
-
-const CLIENTS = [
-  {
-    id: 1,
-    name: "Acme Industries",
-    email: "admin@acme.com",
-    plan: "Enterprise",
-    modules: ["HRMS", "Payroll", "CRM"],
-    users: 240,
-    status: "Active",
-    updated: "02 Oct 2026",
-  },
-  {
-    id: 2,
-    name: "Cedar Health Group",
-    email: "hr@cedarhealth.com",
-    plan: "Professional",
-    modules: ["HRMS"],
-    users: 58,
-    status: "Onboarding",
-    updated: "27 Sep 2026",
-  },
-  {
-    id: 3,
-    name: "Delta Retail Pvt Ltd",
-    email: "ops@deltaretail.in",
-    plan: "Starter",
-    modules: ["CRM"],
-    users: 21,
-    status: "Suspended",
-    updated: "19 Sep 2026",
-  },
-];
 
 const TEQBAE_PROFILE = [
   { label: "Legal Name", value: "Teqbae Technologies Pvt Ltd" },
@@ -83,6 +61,7 @@ const STATUS_STYLES = {
   Active: "bg-green-50 text-green-700",
   Enabled: "bg-green-50 text-green-700",
   Onboarding: "bg-blue-50 text-blue-700",
+  Pending: "bg-yellow-50 text-yellow-700",
   Suspended: "bg-red-50 text-red-700",
   Disabled: "bg-gray-100 text-gray-600",
 };
@@ -224,23 +203,205 @@ function IconButton({ icon, label, onClick }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  TAB 1: CLIENTS                                                    */
+/*  ACTION MENU (three horizontal dots → Update / Delete)             */
+/*  Uses fixed positioning so the table's overflow doesn't clip it.   */
 /* ------------------------------------------------------------------ */
 
+function ActionMenu({ onUpdate, onDelete }) {
+  const [pos, setPos] = useState(null); // { top, right } or null when closed
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+
+  const close = useCallback(() => setPos(null), []);
+
+  const toggle = (e) => {
+    e.stopPropagation();
+    if (pos) return close();
+    const rect = btnRef.current.getBoundingClientRect();
+    setPos({
+      top: rect.bottom + 4,
+      right: window.innerWidth - rect.right,
+    });
+  };
+
+  useEffect(() => {
+    if (!pos) return undefined;
+    const onDocClick = (e) => {
+      if (
+        menuRef.current?.contains(e.target) ||
+        btnRef.current?.contains(e.target)
+      )
+        return;
+      close();
+    };
+    const onKey = (e) => e.key === "Escape" && close();
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [pos, close]);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        title="More actions"
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={!!pos}
+        onClick={toggle}
+        className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
+      >
+        <Icon icon="mdi:dots-horizontal" className="w-[18px] h-[18px]" />
+      </button>
+
+      {pos && (
+        <div
+          ref={menuRef}
+          role="menu"
+          style={{ position: "fixed", top: pos.top, right: pos.right }}
+          className="z-[80] w-36 bg-white border border-gray-100 rounded-lg shadow-lg py-1 text-sm"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              close();
+              onUpdate();
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-50 text-left"
+          >
+            <Icon icon="mdi:pencil-outline" className="w-4 h-4" />
+            Update
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              close();
+              onDelete();
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 text-left"
+          >
+            <Icon icon="mdi:trash-can-outline" className="w-4 h-4" />
+            Delete
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  TAB 1: CLIENTS (data from company GET API)                        */
+/* ------------------------------------------------------------------ */
+
+const capitalize = (s = "") =>
+  s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "Active";
+
+const mapApiTenantToClient = (t) => ({
+  id: t.company_id,
+  name: t.company_name || "—",
+  email: t.email || "—",
+  contact: t.contact_person || "—",
+  phone: t.phone_number || "—",
+  organisationType: t.organisation_type || "—",
+  status: capitalize(t.status || "ACTIVE"),
+  raw: t,
+});
+
 function ClientsTab() {
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
+  const [deleteRequest, setDeleteRequest] = useState(null);
+  const [editingClient, setEditingClient] = useState(null);
+  const [toast, setToast] = useState("");
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(""), 2600);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const fetchClients = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await getActiveTenants();
+      const list = Array.isArray(res) ? res : res?.data || [];
+      setClients(list.map(mapApiTenantToClient));
+    } catch (err) {
+      console.error("Failed to fetch companies:", err);
+      setError("Failed to load clients. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchClients();
+  }, [fetchClients]);
+
+  /* ---------- Delete (uses deleteTenantSubscription endpoint) ---------- */
+  const promptDelete = (row) => {
+    setDeleteRequest({
+      singular: "Client",
+      name: row.name,
+      onConfirm: async () => {
+        try {
+          await deleteTenantSubscription(row.id);
+          setClients((prev) => prev.filter((c) => c.id !== row.id));
+          setToast(`Client "${row.name}" deleted successfully`);
+          return true; // closes DeleteConfirmModal
+        } catch (err) {
+          console.error("Failed to delete client:", err);
+          setToast("Failed to delete client. Please try again.");
+          return false; // keeps modal open
+        }
+      },
+    });
+  };
+
+  /* ---------- Update ---------- */
+  const saveUpdate = (updated) => {
+    // TODO: call your update endpoint here, e.g.
+    // await updateTenant(updated.id, { ...payload });
+    setClients((prev) =>
+      prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)),
+    );
+    setToast(`Client "${updated.name}" updated`);
+    setEditingClient(null);
+  };
+
+  const statusOptions = useMemo(
+    () => ["All", ...Array.from(new Set(clients.map((c) => c.status)))],
+    [clients],
+  );
+
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return CLIENTS.filter(
+    return clients.filter(
       (c) =>
         (statusFilter === "All" || c.status === statusFilter) &&
         (!q ||
           c.name.toLowerCase().includes(q) ||
-          c.email.toLowerCase().includes(q)),
+          c.email.toLowerCase().includes(q) ||
+          c.contact.toLowerCase().includes(q) ||
+          c.phone.toLowerCase().includes(q) ||
+          c.organisationType.toLowerCase().includes(q)),
     );
-  }, [search, statusFilter]);
+  }, [clients, search, statusFilter]);
 
   const columns = [
     {
@@ -258,39 +419,30 @@ function ClientsTab() {
         </div>
       ),
     },
-    { key: "plan", header: "Plan", className: "whitespace-nowrap" },
     {
-      key: "modules",
-      header: "Modules",
-      render: (r) => (
-        <div className="flex flex-wrap gap-1.5">
-          {r.modules.map((m) => (
-            <span
-              key={m}
-              className="px-2 py-0.5 rounded-md bg-gray-100 text-[11px] text-gray-700"
-            >
-              {m}
-            </span>
-          ))}
-        </div>
-      ),
+      key: "contact",
+      header: "Contact Person",
+      className: "whitespace-nowrap",
     },
-    { key: "users", header: "Users" },
+    { key: "phone", header: "Phone", className: "whitespace-nowrap" },
+    {
+      key: "organisationType",
+      header: "Organization Type",
+      className: "whitespace-nowrap",
+    },
     {
       key: "status",
       header: "Status",
       render: (r) => <StatusBadge status={r.status} />,
     },
-    { key: "updated", header: "Last Updated", className: "whitespace-nowrap" },
     {
       key: "actions",
       header: "Actions",
-      render: () => (
-        <div className="flex items-center gap-1">
-          <IconButton icon="mdi:eye-outline" label="View details" />
-          <IconButton icon="mdi:pencil-outline" label="Edit configuration" />
-          <IconButton icon="mdi:dots-vertical" label="More actions" />
-        </div>
+      render: (r) => (
+        <ActionMenu
+          onUpdate={() => setEditingClient(r)}
+          onDelete={() => promptDelete(r)}
+        />
       ),
     },
   ];
@@ -308,7 +460,7 @@ function ClientsTab() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by client name or email"
+              placeholder="Search by client name, email or contact"
               className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-black"
             />
           </div>
@@ -317,7 +469,7 @@ function ClientsTab() {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-black"
           >
-            {["All", "Active", "Onboarding", "Suspended"].map((s) => (
+            {statusOptions.map((s) => (
               <option key={s} value={s}>
                 {s === "All" ? "All statuses" : s}
               </option>
@@ -325,26 +477,160 @@ function ClientsTab() {
           </select>
         </div>
 
-        <button
-          type="button"
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-black text-white hover:bg-gray-800 transition-colors"
-        >
-          <Icon icon="mdi:plus" className="w-5 h-5" />
-          Add Client
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={fetchClients}
+            title="Refresh list"
+            className="p-2 border border-gray-200 bg-white hover:bg-gray-50 rounded-lg text-gray-700 transition-colors"
+          >
+            <Icon
+              icon="mdi:refresh"
+              className={`w-5 h-5 ${loading ? "animate-spin" : ""}`}
+            />
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-black text-white hover:bg-gray-800 transition-colors"
+          >
+            <Icon icon="mdi:plus" className="w-5 h-5" />
+            Add Client
+          </button>
+        </div>
       </div>
 
-      <DataTable
-        columns={columns}
-        rows={rows}
-        emptyText="No clients match your filters"
-      />
+      {loading ? (
+        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-xl border border-gray-100 shadow-sm">
+          <Icon
+            icon="eos-icons:loading"
+            className="w-6 h-6 animate-spin text-gray-500 mb-2"
+          />
+          <p className="text-xs text-gray-500">Loading clients...</p>
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center p-8 bg-white rounded-xl border border-red-100 shadow-sm">
+          <p className="text-xs text-red-500 mb-3">{error}</p>
+          <button
+            onClick={fetchClients}
+            className="px-3.5 py-1.5 text-xs bg-black text-white rounded-lg hover:bg-gray-800 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={rows}
+          emptyText="No clients match your filters"
+        />
+      )}
+
+      {/* Update modal */}
+      {editingClient && (
+        <EditClientModal
+          client={editingClient}
+          onClose={() => setEditingClient(null)}
+          onSave={saveUpdate}
+        />
+      )}
+
+      {/* Delete confirmation */}
+      {deleteRequest && (
+        <DeleteConfirmModal
+          request={deleteRequest}
+          onClose={() => setDeleteRequest(null)}
+        />
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[90] bg-black text-white text-xs px-4 py-3 rounded-lg shadow-lg">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EditClientModal({ client, onClose, onSave }) {
+  const [form, setForm] = useState({
+    name: client.name === "—" ? "" : client.name,
+    email: client.email === "—" ? "" : client.email,
+    contact: client.contact === "—" ? "" : client.contact,
+    phone: client.phone === "—" ? "" : client.phone,
+    organisationType:
+      client.organisationType === "—" ? "" : client.organisationType,
+  });
+
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const fields = [
+    ["name", "Company Name"],
+    ["email", "Email"],
+    ["contact", "Contact Person"],
+    ["phone", "Phone"],
+    ["organisationType", "Organization Type"],
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base text-gray-900 font-semibold">
+            Update Client
+          </h3>
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-gray-100 rounded-full"
+            aria-label="Close"
+          >
+            <Icon
+              icon="heroicons:x-mark-20-solid"
+              className="w-5 h-5 text-gray-400"
+            />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {fields.map(([key, label]) => (
+            <label key={key} className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wider text-gray-500">
+                {label}
+              </span>
+              <input
+                type="text"
+                value={form[key]}
+                onChange={set(key)}
+                className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-black"
+              />
+            </label>
+          ))}
+        </div>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onSave({ id: client.id, ...form })}
+            className="px-4 py-2 text-sm rounded-lg bg-black text-white hover:bg-gray-800"
+          >
+            Save
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/*  TAB 2: TEQBAE (OUR COMPANY)                                       */
+/*  TAB 2: TEQBAE (OUR COMPANY) — UNCHANGED                           */
 /* ------------------------------------------------------------------ */
 
 function TeqbaeTab() {
@@ -414,17 +700,10 @@ function TeqbaeTab() {
     },
   ];
 
-  /* --------------------------------------------------------------- */
-  /* If Configure is clicked: Render MasterDataTab from separate     */
-  /* file and pass onCancel to switch back to normal view            */
-  /* --------------------------------------------------------------- */
   if (isConfiguring) {
     return <MasterDataTab onCancel={() => setIsConfiguring(false)} />;
   }
 
-  /* --------------------------------------------------------------- */
-  /* Normal View: Company Profile + Modules Table                    */
-  /* --------------------------------------------------------------- */
   return (
     <div className="px-4 sm:px-6 flex flex-col gap-6">
       {/* Company profile */}

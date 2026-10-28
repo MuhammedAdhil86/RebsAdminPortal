@@ -79,7 +79,11 @@ export const apiEndpoints = {
   ShiftList: "/hrms/service/list/shift-allocations",
   AllocateShift: "/hrms/service/allocate-shift",
   ListUsers: "/hrms/service/list-users",
-  FetchShifts: "/hrms/service/fetch-shifts",
+  FetchShifts: "/hrms/service/fetch-shifts", // Master data: Trial Packs
+  trialPackList: "/teqbae/trial/packs/all", // GET
+  trialPackUpsert: "/teqbae/trial/upsert-packs", // POST: no id = create, id = update
+  trialPackDelete: (id) => `/teqbae/trial/delete-pack/${id}`, // DELETE
+  trialPackUpdateStatus: (id) => `/teqbae/trial/packs/${id}/update-status`, // PATCH { is_active }
 };
 
 export default apiEndpoints;

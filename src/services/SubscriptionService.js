@@ -173,3 +173,37 @@ export const deleteTenantSubscription = async (companyId, config = {}) =>
       config,
     ),
   );
+
+/* ───────────── Trial packs ───────────── */
+
+// GET /teqbae/trial/packs/all
+// -> [ { id, code, name, duration_days, is_active, services: [ { id, name, code } ] } ]
+export const getTrialPacks = async (config = {}) =>
+  request("GET trial/packs/all", null, () =>
+    apiClient.get(apiEndpoints.trialPackList, config),
+  );
+
+// POST /teqbae/trial/upsert-packs
+// create: { code, name, duration_days, is_active, service_ids }
+// update: same + id
+export const upsertTrialPack = async (payload = {}, config = {}) =>
+  request(
+    `POST trial/upsert-packs (${payload.id ? "update" : "create"})`,
+    payload,
+    () => apiClient.post(apiEndpoints.trialPackUpsert, payload, config),
+  );
+
+// DELETE /teqbae/trial/delete-pack/{id}
+export const deleteTrialPack = async (id, config = {}) =>
+  request(`DELETE trial/delete-pack/${id}`, { id }, () =>
+    apiClient.delete(apiEndpoints.trialPackDelete(id), config),
+  );
+
+// PATCH /teqbae/trial/packs/{id}/update-status
+// payload: { is_active: true | false }
+export const updateTrialPackStatus = async (id, isActive, config = {}) => {
+  const payload = { is_active: isActive };
+  return request(`PATCH trial/packs/${id}/update-status`, payload, () =>
+    apiClient.patch(apiEndpoints.trialPackUpdateStatus(id), payload, config),
+  );
+};

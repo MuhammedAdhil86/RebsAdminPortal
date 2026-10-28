@@ -31,6 +31,12 @@ import {
   deletePlanServicePricing,
   DEBUG,
 } from "../../services/MasterService";
+import {
+  getTrialPacks,
+  upsertTrialPack,
+  deleteTrialPack,
+  updateTrialPackStatus,
+} from "../../services/SubscriptionService";
 
 import CountryTab from "./country_tab";
 import OrganisationTypeTab from "./organisation_type_tab";
@@ -39,6 +45,7 @@ import BillingPeriodTab from "./Billing_Period_Tab";
 import SubscriptionPlanTab from "./subscription_plan_tab";
 import PlanServiceTab from "./Plan_Service_Tab";
 import PlanServicePricingTab from "./plan_service_pricing_tab";
+import TrialPackTab from "./trial_pack_tab";
 import DeleteConfirmModal from "../../components/modals/DeleteConfirmModal";
 
 /* Console logging (development, or VITE_DEBUG_LOGS=true) */
@@ -125,6 +132,17 @@ const APIS = {
     update: (payload) => updatePlanServicePricing(payload, SILENT),
     remove: (id) => deletePlanServicePricing(id, SILENT),
   },
+
+  // GET /teqbae/trial/packs/all
+  // POST /teqbae/trial/upsert-packs  (no id = create, id = update)
+  // DELETE /teqbae/trial/delete-pack/:id
+  // PATCH /teqbae/trial/packs/:id/update-status  { is_active }
+  trialPack: {
+    list: () => getTrialPacks(SILENT),
+    save: (payload) => upsertTrialPack(payload, SILENT),
+    remove: (id) => deleteTrialPack(id, SILENT),
+    updateStatus: (id, isActive) => updateTrialPackStatus(id, isActive, SILENT),
+  },
 };
 
 /* Tab definitions */
@@ -155,6 +173,11 @@ const TABS = [
     key: "planServicePricing",
     label: "Plan Service Pricings",
     Component: PlanServicePricingTab,
+  },
+  {
+    key: "trialPack",
+    label: "Trial Packs",
+    Component: TrialPackTab,
   },
 ];
 

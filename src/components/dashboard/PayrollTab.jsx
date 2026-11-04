@@ -1,43 +1,163 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
-// import { getPayrollSettings } from "../../services/PayrollService"; // <- plug in your API
+import { isCanceled } from "../../services/PolicyService"; // adjust path if needed
+import { getSalaryTemplates } from "../../services/PayrollService"; // adjust path if needed
+import AllocatePayrollModal from "../modals/AllocatePayrollModal"; // adjust path if needed
 
-const COLUMNS = ["Pay Cycle", "Pay Day", "Salary Components", "Status"];
+const errorMessage = (err, fallback) =>
+  err?.data?.message ||
+  err?.response?.data?.message ||
+  err?.message ||
+  fallback;
 
-const isAbort = (err) =>
-  err?.name === "CanceledError" ||
-  err?.name === "AbortError" ||
-  err?.code === "ERR_CANCELED" ||
-  err?.message === "canceled";
+const formatINR = (n) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(Number(n) || 0);
 
-export default function PayrollTab({ companyId, companyName }) {
-  const [state, setState] = useState({ loading: true, error: null, cycles: [] });
+// "percentage_ctc" + 50 -> "50% of CTC", "flat" + 250 -> "₹250"
+const describeMapping = (m) => {
+  if (m.calculation_type === "percentage_ctc") return `${m.value}% of CTC`;
+  if (m.calculation_type === "flat") return formatINR(m.value);
+  return `${m.value} (${String(m.calculation_type || "").replace(/_/g, " ")})`;
+};
+
+function TemplateCard({ template }) {
+  const [open, setOpen] = useState(false);
+  const mappings = Array.isArray(template.mappings) ? template.mappings : [];
+  const isActive = String(template.status).toLowerCase() === "active";
+
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-start justify-between gap-3 px-4 py-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="w-9 h-9 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center shrink-0">
+            <Icon icon="mdi:file-document-outline" className="w-4 h-4" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-gray-900 leading-tight truncate">
+              {template.name}
+            </h3>
+            <p className="text-[11px] text-gray-500 truncate">
+              {template.description || "No description"}
+            </p>
+          </div>
+        </div>
+        <span
+          className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium capitalize ${
+            isActive
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-gray-100 text-gray-500"
+          }`}
+        >
+          {template.status || "—"}
+        </span>
+      </div>
+
+      <div className="px-4 pb-3">
+        <p className="text-[10px] uppercase tracking-wide text-gray-400">
+          Annual CTC
+        </p>
+        <p className="text-base font-semibold text-gray-900">
+          {formatINR(template.annual_ctc)}
+        </p>
+      </div>
+
+      {open && mappings.length > 0 && (
+        <div className="border-t border-gray-100 divide-y divide-gray-100">
+          {mappings.map((m) => (
+            <div
+              key={m.id}
+              className="flex items-center justify-between gap-3 px-4 py-2 text-[11px]"
+            >
+              <span className="text-gray-600 truncate">
+                {m.component_name || "—"}
+              </span>
+              <span className="font-medium text-gray-900">
+                {describeMapping(m)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center px-4 py-3 border-t border-gray-100 bg-gray-50/50">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          disabled={mappings.length === 0}
+          className="flex items-center gap-1 text-[11px] text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Icon
+            icon="mdi:chevron-down"
+            className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`}
+          />
+          {mappings.length} component{mappings.length === 1 ? "" : "s"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TemplatesSkeleton() {
+  return (
+    <div
+      className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"
+      role="status"
+      aria-live="polite"
+    >
+      {[...Array(3)].map((_, i) => (
+        <div
+          key={i}
+          className="h-40 rounded-2xl border border-gray-200 bg-white p-4"
+        >
+          <div className="h-4 w-32 rounded bg-gray-100 animate-pulse" />
+          <div className="mt-3 h-3 w-48 rounded bg-gray-100 animate-pulse" />
+          <div className="mt-6 h-6 w-24 rounded bg-gray-100 animate-pulse" />
+        </div>
+      ))}
+      <span className="sr-only">Loading salary templates</span>
+    </div>
+  );
+}
+
+export default function PayrollTab({
+  companyId,
+  companyName,
+  canBulkAllocate = true, // multiple select enabled; pass false to restrict
+}) {
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
+  const [tpl, setTpl] = useState({
+    loading: true,
+    error: null,
+    items: [],
+  });
+
+  const [allocateOpen, setAllocateOpen] = useState(false);
+  const [pickedTemplateId, setPickedTemplateId] = useState(null);
+
+  // Load salary templates
   useEffect(() => {
     if (companyId == null) return undefined;
     const controller = new AbortController();
     const { signal } = controller;
 
     const load = async () => {
-      setState((s) => ({ ...s, loading: true, error: null }));
+      setTpl((s) => ({ ...s, loading: true, error: null }));
       try {
-        // const res = await getPayrollSettings(companyId, { signal });
-        // const body = res?.data ?? res;
-        // const cycles = Array.isArray(body?.cycles) ? body.cycles : [];
-        const cycles = []; // TODO: replace with API result above
-        setState({ loading: false, error: null, cycles });
+        const { templates } = await getSalaryTemplates(companyId, { signal });
+        setTpl({ loading: false, error: null, items: templates });
       } catch (err) {
-        if (signal.aborted || isAbort(err)) return;
-        console.error("[PayrollTab] load failed", err);
-        setState({
+        if (signal.aborted || isCanceled(err)) return;
+        console.error("[PayrollTab] templates load failed", err);
+        setTpl({
           loading: false,
-          error:
-            err?.response?.data?.message ||
-            err?.message ||
-            "Failed to load payroll settings.",
-          cycles: [],
+          error: errorMessage(err, "Failed to load salary templates."),
+          items: [],
         });
       }
     };
@@ -46,15 +166,29 @@ export default function PayrollTab({ companyId, companyName }) {
     return () => controller.abort();
   }, [companyId, reloadKey]);
 
-  const { loading, error, cycles } = state;
+  const openAllocate = (template = null) => {
+    setPickedTemplateId(template ? template.id : null);
+    setAllocateOpen(true);
+  };
 
   return (
     <div className="flex flex-col gap-3 font-[Poppins]">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-[11px] text-gray-500">
-          Payroll configuration for {companyName || "this company"}
+          Salary templates for {companyName || "this company"}
         </p>
-        <div className="flex items-center gap-2">
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => openAllocate(null)}
+            disabled={tpl.loading || tpl.items.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-black text-white hover:bg-gray-800 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Icon icon="mdi:account-cash-outline" className="w-4 h-4" />
+            Allocate salary
+          </button>
+
           <button
             type="button"
             onClick={reload}
@@ -63,31 +197,17 @@ export default function PayrollTab({ companyId, companyName }) {
           >
             <Icon
               icon="mdi:refresh"
-              className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+              className={`w-4 h-4 ${tpl.loading ? "animate-spin" : ""}`}
             />
-          </button>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-black text-white hover:bg-gray-800 transition-colors shadow-sm"
-          >
-            <Icon icon="heroicons:plus-20-solid" className="w-4 h-4" />
-            Add Pay Cycle
           </button>
         </div>
       </div>
 
-      {loading && (
-        <div className="space-y-2" role="status" aria-live="polite">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-9 rounded bg-gray-100 animate-pulse" />
-          ))}
-          <span className="sr-only">Loading payroll settings</span>
-        </div>
-      )}
+      {tpl.loading && <TemplatesSkeleton />}
 
-      {!loading && error && (
+      {!tpl.loading && tpl.error && (
         <div className="flex items-center justify-between gap-3" role="alert">
-          <p className="text-xs text-red-600">{error}</p>
+          <p className="text-xs text-red-600">{tpl.error}</p>
           <button
             type="button"
             onClick={reload}
@@ -98,54 +218,30 @@ export default function PayrollTab({ companyId, companyName }) {
         </div>
       )}
 
-      {!loading && !error && cycles.length === 0 && (
-        <p className="text-xs text-gray-500">No payroll settings found.</p>
+      {!tpl.loading && !tpl.error && tpl.items.length === 0 && (
+        <p className="text-xs text-gray-500">
+          No salary templates found for this company.
+        </p>
       )}
 
-      {!loading && !error && cycles.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="text-[11px] text-gray-500 border-b border-gray-100">
-                {COLUMNS.map((label) => (
-                  <th key={label} scope="col" className="py-2 pr-4 font-medium">
-                    {label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {cycles.map((c) => (
-                <tr
-                  key={c.id}
-                  className="border-b border-gray-50 last:border-0"
-                >
-                  <td className="py-2.5 pr-4 font-medium text-gray-900 whitespace-nowrap">
-                    {c.name || "—"}
-                  </td>
-                  <td className="py-2.5 pr-4 text-gray-600">{c.pay_day || "—"}</td>
-                  <td className="py-2.5 pr-4 text-gray-600">
-                    {Array.isArray(c.components) && c.components.length
-                      ? c.components.join(", ")
-                      : "—"}
-                  </td>
-                  <td className="py-2.5">
-                    <span
-                      className={`px-3 py-1 rounded-full text-[12px] font-medium capitalize ${
-                        c.status === "ACTIVE"
-                          ? "bg-green-100 text-green-600"
-                          : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {(c.status || "—").toLowerCase()}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {!tpl.loading && !tpl.error && tpl.items.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {tpl.items.map((t) => (
+            <TemplateCard key={t.id} template={t} />
+          ))}
         </div>
       )}
+
+      <AllocatePayrollModal
+        open={allocateOpen}
+        onClose={() => setAllocateOpen(false)}
+        companyId={companyId}
+        templates={tpl.items}
+        templatesLoading={tpl.loading}
+        templateId={pickedTemplateId}
+        canSelectMultiple={canBulkAllocate}
+        onSuccess={reload}
+      />
     </div>
   );
 }

@@ -306,7 +306,7 @@ export default function ResetPasswordPage() {
             <p className="mt-5 text-center text-sm text-muted">
               <Link
                 to="/login"
-                className="font-medium text-brand  hover:text-brand-hover "
+                className="font-medium   hover:text-brand-hover "
               >
                 Back to login
               </Link>

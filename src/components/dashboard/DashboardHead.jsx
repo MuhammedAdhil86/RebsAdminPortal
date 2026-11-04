@@ -28,7 +28,7 @@ export default function DashboardHead({
 
   return (
     <div className="w-full bg-white relative">
-      <div className="w-full flex items-center justify-between gap-4 px-4 sm:px-6 py-3 border-b bg-white">
+      <div className="w-full flex items-center justify-between gap-4 px-4 sm:px-6 py-3 border-b border-gray-300 bg-white">
         <p className="text-sm sm:text-base text-gray-800 pl-12 md:pl-0 truncate">
           {greeting}, {userName}
         </p>

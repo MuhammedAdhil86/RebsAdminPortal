@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Clock, Search, X } from "lucide-react";
+import { Icon } from "@iconify/react";
 import { toast } from "react-toastify";
 import {
   allocateShift,
   fetchShifts,
+  getMappedPolicies,
   getStaffList,
   isCanceled,
 } from "../../services/PolicyService"; // adjust path
@@ -12,7 +14,9 @@ import {
 const pickDefaultShift = (shifts = []) =>
   shifts.find((s) => s.is_default) ?? shifts[0] ?? null;
 
-// One allocate-shift request per staff (the API takes a single staff_id).
+// One allocate-shift request covers one or many staff.
+//  bulk = false -> payload uses staff_id  (single)
+//  bulk = true  -> payload uses staff_ids (bulk)
 // Resolves to { succeeded: [ids], failed: [{ id, error }] }.
 const allocateShiftToMany = async ({
   companyId,
@@ -20,26 +24,24 @@ const allocateShiftToMany = async ({
   staffIds,
   fromDate,
   toDate,
+  policyIds,
+  bulk,
 }) => {
   const ids = [
     ...new Set((staffIds || []).map((id) => String(id).trim())),
   ].filter(Boolean);
-  const succeeded = [];
-  const failed = [];
 
-  for (const staffId of ids) {
-    try {
-      await allocateShift(
-        { companyId, shiftId, staffId, fromDate, toDate },
-        { silent: true },
-      );
-      succeeded.push(staffId);
-    } catch (err) {
-      if (isCanceled(err)) throw err;
-      failed.push({ id: staffId, error: err?.message || "Failed" });
-    }
+  try {
+    await allocateShift(
+      { companyId, shiftId, staffIds: ids, fromDate, toDate, policyIds, bulk },
+      { silent: true },
+    );
+    return { succeeded: ids, failed: [] };
+  } catch (err) {
+    if (isCanceled(err)) throw err;
+    const error = err?.message || "Failed";
+    return { succeeded: [], failed: ids.map((id) => ({ id, error })) };
   }
-  return { succeeded, failed };
 };
 
 const globalFont = "font-['Poppins'] font-normal text-[12px]";
@@ -66,25 +68,25 @@ const todayStr = () => {
   return `${d.getFullYear()}-${m}-${day}`;
 };
 
-const hhmm = (t) => String(t ?? "").slice(0, 5);
-
 /**
- * Allocate a shift to one or more staff for a date range.
+ * Allocate a shift (and its mapped policies) to one or more staff for a
+ * date range.
  *
  * Props:
- *  - open       boolean
- *  - onClose    () => void
- *  - onSuccess  ({ staffIds, shiftId, fromDate, toDate }) => void
- *  - companyId  number | string   (sent as platform_id)
- *  - shiftId    optional. When given, that shift is used (no dropdown).
- *               When omitted, a "Shift" dropdown is loaded from
- *               fetchShifts(companyId) and the default shift is preselected.
- *  - shiftName  optional display name (used with shiftId)
- *  - staffId    optional. When given, the modal is for that ONE staff member:
- *               the staff list is hidden and only they are allocated.
- *  - staffName  optional display name (used with staffId)
- *
- * onSuccess receives { staffIds, shiftId, fromDate, toDate }.
+ *  - open               boolean
+ *  - onClose            () => void
+ *  - onSuccess          ({ staffIds, shiftId, fromDate, toDate, policyIds }) => void
+ *  - companyId          number | string   (sent as platform_id)
+ *  - shiftId            optional. When given, that shift is used (no dropdown).
+ *                       When omitted, a "Shift" dropdown is loaded from
+ *                       fetchShifts(companyId) and the default shift is preselected.
+ *  - shiftName          optional display name (used with shiftId)
+ *  - staffId            optional. Hard-locks the modal to ONE staff member:
+ *                       the staff list is hidden and only they are allocated.
+ *  - staffName          optional display name (used with staffId)
+ *  - defaultStaffId     optional. Staff pre-ticked in the list (can be changed).
+ *  - canSelectMultiple  privilege flag (default true). true -> Single / Multiple
+ *                       toggle is shown. false -> single staff only (radio list).
  */
 export default function AllocateShiftModal({
   open,
@@ -95,8 +97,15 @@ export default function AllocateShiftModal({
   shiftName,
   staffId: staffIdProp,
   staffName,
+  defaultStaffId,
+  canSelectMultiple = true,
 }) {
   const singleStaff = staffIdProp != null && staffIdProp !== "";
+
+  // "single" | "multiple"
+  const [mode, setMode] = useState("single");
+  const isMultiple = canSelectMultiple && mode === "multiple";
+
   const [staff, setStaff] = useState({
     loading: false,
     error: null,
@@ -112,6 +121,14 @@ export default function AllocateShiftModal({
   const [shiftReload, setShiftReload] = useState(0);
   const [shiftId, setShiftId] = useState("");
 
+  const [policies, setPolicies] = useState({
+    loading: false,
+    error: null,
+    list: [],
+  });
+  const [policyReload, setPolicyReload] = useState(0);
+  const [selectedPolicies, setSelectedPolicies] = useState([]); // id strings
+
   const [fromDate, setFromDate] = useState(todayStr());
   const [toDate, setToDate] = useState("");
 
@@ -123,14 +140,21 @@ export default function AllocateShiftModal({
   // Reset every time the modal opens
   useEffect(() => {
     if (!open) return;
-    setSelected(singleStaff ? [String(staffIdProp)] : []);
+    setMode("single");
+    setSelected(
+      singleStaff
+        ? [String(staffIdProp)]
+        : defaultStaffId
+          ? [String(defaultStaffId)]
+          : [],
+    );
     setQuery("");
     setError(null);
     setSubmitting(false);
     setFromDate(todayStr());
     setToDate("");
     setShiftId(shiftIdProp != null ? String(shiftIdProp) : "");
-  }, [open, shiftIdProp, staffIdProp]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, shiftIdProp, staffIdProp, defaultStaffId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load staff when opened (not needed when allocating to one given staff)
   useEffect(() => {
@@ -193,6 +217,40 @@ export default function AllocateShiftModal({
     return () => controller.abort();
   }, [open, companyId, shiftIdProp, shiftReload]);
 
+  // Load the policies mapped to the chosen shift
+  useEffect(() => {
+    if (!open || companyId == null || !shiftId) {
+      setPolicies({ loading: false, error: null, list: [] });
+      setSelectedPolicies([]);
+      return undefined;
+    }
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    (async () => {
+      setPolicies((p) => ({ ...p, loading: true, error: null }));
+      try {
+        const { policies: list } = await getMappedPolicies(companyId, shiftId, {
+          signal,
+          silent: true,
+        });
+        setPolicies({ loading: false, error: null, list });
+        setSelectedPolicies(list.map((p) => String(p.id))); // preselect all
+      } catch (err) {
+        if (signal.aborted || isCanceled(err)) return;
+        console.error("[AllocateShiftModal] policies load failed", err);
+        setPolicies({
+          loading: false,
+          error: errorMessage(err, "Failed to load policies."),
+          list: [],
+        });
+        setSelectedPolicies([]);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [open, companyId, shiftId, policyReload]);
+
   const selectedShift = useMemo(
     () => shifts.list.find((s) => String(s.id) === String(shiftId)) || null,
     [shifts.list, shiftId],
@@ -238,8 +296,15 @@ export default function AllocateShiftModal({
 
   if (!open) return null;
 
+  // Single mode behaves like a radio group; multiple mode toggles
   const toggle = (id) =>
-    setSelected((prev) =>
+    setSelected((prev) => {
+      if (!isMultiple) return [id];
+      return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+    });
+
+  const togglePolicy = (id) =>
+    setSelectedPolicies((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
 
@@ -250,6 +315,12 @@ export default function AllocateShiftModal({
       return [...new Set([...prev, ...ids])];
     });
 
+  const switchMode = (next) => {
+    setMode(next);
+    // Going back to single keeps just one selection
+    if (next === "single") setSelected((prev) => prev.slice(0, 1));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (submitting) return;
@@ -257,6 +328,8 @@ export default function AllocateShiftModal({
     if (!fromDate || !toDate) return setError("Choose a start and end date.");
     if (toDate < fromDate)
       return setError("End date cannot be before start date.");
+    if (selectedPolicies.length === 0)
+      return setError("Select at least one policy.");
     if (selected.length === 0)
       return setError("Select at least one staff member.");
 
@@ -269,6 +342,8 @@ export default function AllocateShiftModal({
         staffIds: selected,
         fromDate,
         toDate,
+        policyIds: selectedPolicies,
+        bulk: isMultiple,
       });
 
       if (failed.length === 0) {
@@ -277,7 +352,13 @@ export default function AllocateShiftModal({
             succeeded.length > 1 ? "s" : ""
           }`,
         );
-        onSuccess?.({ staffIds: succeeded, shiftId, fromDate, toDate });
+        onSuccess?.({
+          staffIds: succeeded,
+          shiftId,
+          fromDate,
+          toDate,
+          policyIds: selectedPolicies,
+        });
         onClose();
         return;
       }
@@ -287,7 +368,13 @@ export default function AllocateShiftModal({
         toast.warn(
           `Allocated ${succeeded.length}, failed ${failed.length}. Retry the rest.`,
         );
-        onSuccess?.({ staffIds: succeeded, shiftId, fromDate, toDate });
+        onSuccess?.({
+          staffIds: succeeded,
+          shiftId,
+          fromDate,
+          toDate,
+          policyIds: selectedPolicies,
+        });
       }
       setSelected(failed.map((f) => f.id));
       setError(
@@ -304,7 +391,6 @@ export default function AllocateShiftModal({
     }
   };
 
-  const policy = selectedShift?.policies?.[0];
   const subtitle = singleStaff
     ? staffName || `Staff #${staffIdProp}`
     : shiftName ||
@@ -313,6 +399,17 @@ export default function AllocateShiftModal({
 
   const inputCls =
     "w-full px-4 py-2 bg-[#F4F6F8] border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-gray-300 transition-all";
+
+  // Date inputs: hide the browser's own calendar icon (we draw ours on the
+  // left) and open the picker when the field is clicked instead.
+  const dateInputCls = `${inputCls} pl-9 [&::-webkit-calendar-picker-indicator]:hidden`;
+  const openPicker = (e) => {
+    try {
+      e.currentTarget.showPicker?.();
+    } catch {
+      /* some browsers only allow showPicker from a user gesture; ignore */
+    }
+  };
 
   return (
     <div
@@ -401,12 +498,6 @@ export default function AllocateShiftModal({
                   ))}
                 </select>
               )}
-              {policy && (
-                <p className="mt-1 text-[10px] text-gray-500">
-                  {policy.policy_name} · {hhmm(policy.start_time)}–
-                  {hhmm(policy.end_time)} · {policy.working_hours}h
-                </p>
-              )}
             </div>
           )}
 
@@ -419,13 +510,20 @@ export default function AllocateShiftModal({
               >
                 From date
               </label>
-              <input
-                id="alloc-from"
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className={inputCls}
-              />
+              <div className="relative">
+                <Icon
+                  icon="solar:calendar-outline"
+                  className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                />
+                <input
+                  id="alloc-from"
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  onClick={openPicker}
+                  className={dateInputCls}
+                />
+              </div>
             </div>
             <div>
               <label
@@ -434,17 +532,98 @@ export default function AllocateShiftModal({
               >
                 To date
               </label>
-              <input
-                id="alloc-to"
-                type="date"
-                value={toDate}
-                min={fromDate || undefined}
-                onChange={(e) => setToDate(e.target.value)}
-                className={inputCls}
-              />
+              <div className="relative">
+                <Icon
+                  icon="solar:calendar-outline"
+                  className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                />
+                <input
+                  id="alloc-to"
+                  type="date"
+                  value={toDate}
+                  min={fromDate || undefined}
+                  onChange={(e) => setToDate(e.target.value)}
+                  onClick={openPicker}
+                  className={dateInputCls}
+                />
+              </div>
             </div>
           </div>
 
+          {/* Mapped policies */}
+          {shiftId && (
+            <div>
+              <span className="block text-[11px] text-gray-700 mb-1.5">
+                Policies
+              </span>
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                {policies.loading && (
+                  <div className="p-3" role="status">
+                    <div className="h-9 rounded bg-gray-100 animate-pulse" />
+                    <span className="sr-only">Loading policies</span>
+                  </div>
+                )}
+
+                {!policies.loading && policies.error && (
+                  <div
+                    className="p-3 flex items-center justify-between gap-3"
+                    role="alert"
+                  >
+                    <p className="text-[11px] text-red-600">{policies.error}</p>
+                    <button
+                      type="button"
+                      onClick={() => setPolicyReload((k) => k + 1)}
+                      className="px-3 py-1.5 text-[11px] border border-gray-200 bg-white hover:bg-gray-50 rounded-lg text-gray-700"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+
+                {!policies.loading &&
+                  !policies.error &&
+                  policies.list.length === 0 && (
+                    <p className="p-3 text-[11px] text-gray-500">
+                      No policies are mapped to this shift.
+                    </p>
+                  )}
+
+                {!policies.loading && !policies.error && (
+                  <div className="divide-y divide-gray-100">
+                    {policies.list.map((p) => {
+                      const id = String(p.id);
+                      const checked = selectedPolicies.includes(id);
+                      return (
+                        <label
+                          key={id}
+                          className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${
+                            checked
+                              ? "bg-[#F4F6F8]"
+                              : "bg-white hover:bg-gray-50"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => togglePolicy(id)}
+                            className="accent-black w-4 h-4 rounded border-gray-200 cursor-pointer shrink-0"
+                          />
+                          <span className="min-w-0 flex-1 text-[12px] text-gray-900 truncate">
+                            {p.name}
+                          </span>
+                          <span className="text-[10px] text-gray-400 shrink-0">
+                            {p.code}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Hard-locked single staff (staffId prop) */}
           {singleStaff && (
             <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-200 bg-[#F4F6F8]">
               <span className="w-8 h-8 rounded-full bg-white text-gray-600 text-[10px] font-medium flex items-center justify-center shrink-0">
@@ -461,8 +640,32 @@ export default function AllocateShiftModal({
             </div>
           )}
 
+          {/* Staff chooser: all staff, single or multiple */}
           {!singleStaff && (
             <>
+              {/* Mode toggle: only shown with the privilege */}
+              {canSelectMultiple && (
+                <div className="inline-flex self-start p-0.5 rounded-lg bg-[#F4F6F8] border border-gray-200">
+                  {[
+                    ["single", "Single"],
+                    ["multiple", "Multiple"],
+                  ].map(([val, label]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => switchMode(val)}
+                      className={`px-3 py-1 text-[11px] rounded-md transition-colors ${
+                        mode === val
+                          ? "bg-black text-white"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* Staff search */}
               <div className="relative">
                 <Search
@@ -480,21 +683,27 @@ export default function AllocateShiftModal({
               </div>
 
               <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={allFilteredSelected}
-                    onChange={toggleAllFiltered}
-                    disabled={filtered.length === 0}
-                    className="accent-black w-4 h-4 rounded border-gray-200 cursor-pointer"
-                  />
+                {isMultiple ? (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={toggleAllFiltered}
+                      disabled={filtered.length === 0}
+                      className="accent-black w-4 h-4 rounded border-gray-200 cursor-pointer"
+                    />
+                    <span className="text-[11px] text-gray-700">
+                      {query.trim() ? "Select all results" : "Select all staff"}
+                    </span>
+                  </label>
+                ) : (
                   <span className="text-[11px] text-gray-700">
-                    {query.trim() ? "Select all results" : "Select all staff"}
+                    Select one staff member
                   </span>
-                </label>
+                )}
                 <div className="flex items-center gap-2 text-[11px] text-gray-500">
                   <span>{selected.length} selected</span>
-                  {selected.length > 0 && (
+                  {isMultiple && selected.length > 0 && (
                     <button
                       type="button"
                       onClick={() => setSelected([])}
@@ -560,10 +769,11 @@ export default function AllocateShiftModal({
                           }`}
                         >
                           <input
-                            type="checkbox"
+                            type={isMultiple ? "checkbox" : "radio"}
+                            name="alloc-staff"
                             checked={checked}
                             onChange={() => toggle(id)}
-                            className="accent-black w-4 h-4 rounded border-gray-200 cursor-pointer shrink-0"
+                            className="accent-black w-4 h-4 border-gray-200 cursor-pointer shrink-0"
                           />
                           <span className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 text-[10px] font-medium flex items-center justify-center shrink-0">
                             {initials(u.name)}
@@ -613,13 +823,14 @@ export default function AllocateShiftModal({
               !shiftId ||
               !fromDate ||
               !toDate ||
+              selectedPolicies.length === 0 ||
               selected.length === 0
             }
             className="px-6 py-2 bg-black text-white rounded-xl text-[12px] hover:bg-zinc-800 shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting
               ? "Allocating..."
-              : !singleStaff && selected.length > 0
+              : isMultiple && selected.length > 0
                 ? `Allocate (${selected.length})`
                 : "Allocate"}
           </button>

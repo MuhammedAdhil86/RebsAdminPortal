@@ -47,6 +47,9 @@ export const apiEndpoints = {
   planServicePricingAdd: "/teqbae/plan-service-pricing/add", // PUT: id 0 = create, id > 0 = update
   planServicePricingDelete: (id) => `/teqbae/plan-service-pricing/delete/${id}`,
 
+  // Payroll / salary templates
+  ListSalaryTemplates: "/hrms/service/list/salary-templates",
+  AllocateSalaryTemplate: "/hrms/service/allocate/salary-templates",
   //supscription
   // Try with slash:
   tenantSubscriptionInfo: "/tenant/subscription/tenant-info",
@@ -77,6 +80,7 @@ export const apiEndpoints = {
   AllocateLeavePolicyStaffs: "/hrms/service/allocate-staffs/leave-policy",
   hrmsBulkAddUsers: "/hrms/service/bulk-add/users",
   ShiftList: "/hrms/service/list/shift-allocations",
+  ShiftMappedPolicies: "/hrms/service/mapped-policies",
   AllocateShift: "/hrms/service/allocate-shift",
   ListUsers: "/hrms/service/list-users",
   FetchShifts: "/hrms/service/fetch-shifts", // Master data: Trial Packs

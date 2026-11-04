@@ -31,7 +31,7 @@ export default function DashboardOverview() {
   return (
     <>
       <section className="bg-white mt-4 sm:mt-6 w-full px-4 sm:px-6">
-        <div className="border-b flex flex-wrap gap-4 sm:gap-6 pt-4 text-sm">
+        <div className="border-b  border-gray-300 flex flex-wrap gap-4 sm:gap-6 pt-4 text-sm">
           {TABS.map((tab) => (
             <button
               key={tab.key}

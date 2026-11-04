@@ -4,7 +4,7 @@ import { getActiveTenants } from "../../services/SubscriptionService"; // <- adj
 import { getemployeeUsers } from "../../services/PolicyService"; // <- adjust path
 import ShiftTab from "../dashboard/ShiftTab"; // adjust path if needed
 import LeaveTab from "../dashboard/LeaveTab"; // adjust path if needed
-// import PayrollTab from "../dashboard/PayrollTab"; // adjust path if needed
+import PayrollTab from "../dashboard/PayrollTab"; // adjust path if needed
 import AddEmployeeTab from "../dashboard/AddEmployeeTab"; // adjust path if needed
 
 const unwrap = (res) => res?.data ?? res;
@@ -34,7 +34,7 @@ const COLUMNS = ["Employee", "Department", "Designation", "Branch"];
 const SECTIONS = [
   { key: "shift", label: "Shift", icon: "mdi:clock-outline" },
   { key: "leave", label: "Leave", icon: "mdi:calendar-check-outline" },
-  // { key: "payroll", label: "Payroll", icon: "mdi:cash-multiple" },
+  { key: "payroll", label: "Payroll", icon: "mdi:cash-multiple" },
   {
     key: "addEmployee",
     label: "Add Employee",

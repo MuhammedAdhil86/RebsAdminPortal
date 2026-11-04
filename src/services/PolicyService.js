@@ -337,20 +337,46 @@ const toUtcMidnight = (value) => {
  *          in getShiftAllocations)
  */
 export const allocateShift = async (
-  { companyId, shiftId, staffId, fromDate, toDate },
+  {
+    companyId,
+    shiftId,
+    staffId,
+    staffIds,
+    fromDate,
+    toDate,
+    policyIds,
+    bulk = false,
+  },
   config = {},
 ) => {
+  // Accept staffIds (array) or staffId (single), then clean and de-duplicate
+  const ids = [
+    ...new Set(
+      (Array.isArray(staffIds) ? staffIds : [staffIds ?? staffId])
+        .map((v) => String(v ?? "").trim())
+        .filter(Boolean),
+    ),
+  ];
+
+  if (ids.length === 0) throw new Error("A valid staff id is required.");
+
   const body = {
     platform_id: toId(companyId, "company id"),
     shift_id: toId(shiftId, "shift id"),
-    staff_id: String(staffId ?? "").trim(),
     from_date: toUtcMidnight(fromDate),
     to_date: toUtcMidnight(toDate),
+    policy_ids: (policyIds || []).map((p) => toId(p, "policy id")),
   };
 
-  if (!body.staff_id) throw new Error("A valid staff id is required.");
   if (body.to_date < body.from_date) {
     throw new Error("End date cannot be before start date.");
+  }
+
+  // Single -> staff_id, Bulk -> staff_ids
+  if (bulk) {
+    body.staff_ids = ids;
+  } else {
+    body.staff_id = ids[0];
   }
 
   const res = await request("POST service/allocate-shift", body, () =>
@@ -361,4 +387,40 @@ export const allocateShift = async (
     throw new Error(res?.message || "Failed to allocate shift.");
   }
   return res;
+};
+/**
+ * GET /hrms/service/mapped-policies?platform_id=1&shift_id=83
+ * -> [{ id, name, code }]
+ *
+ * Always resolves to { policies } with `policies` an array.
+ */
+export const getMappedPolicies = async (companyId, shiftId, config = {}) => {
+  const platformId = toId(companyId, "company id");
+  const shift = toId(shiftId, "shift id");
+  const { params, ...restConfig } = config;
+
+  const body = await request(
+    "GET service/mapped-policies",
+    { platform_id: platformId, shift_id: shift },
+    () =>
+      apiClient.get(apiEndpoints.ShiftMappedPolicies, {
+        ...restConfig,
+        params: { ...(params || {}), platform_id: platformId, shift_id: shift },
+      }),
+  );
+
+  if (body?.success === false) {
+    throw new Error(body?.message || "Failed to load policies.");
+  }
+
+  // The API returns a bare array; also tolerate { policies } / { data }
+  const policies = Array.isArray(body)
+    ? body
+    : Array.isArray(body?.policies)
+      ? body.policies
+      : Array.isArray(body?.data)
+        ? body.data
+        : [];
+
+  return { policies };
 };

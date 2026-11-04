@@ -6,6 +6,7 @@ import {
   isCanceled,
 } from "../../services/PolicyService"; // adjust path if needed
 import AllocateShiftModal from "../modals/AllocateShiftModal"; // adjust path if needed
+import CustomSelect from "../modals/ui/CustomSelect"; // adjust path if needed
 
 const MONTHS_LONG = [
   "January",
@@ -41,6 +42,22 @@ const errorMessage = (err, fallback) =>
   err?.response?.data?.message ||
   err?.message ||
   fallback;
+
+// One size/look for every input (matches CustomSelect and the modals)
+const fieldCls =
+  "px-3 py-2 text-xs bg-white border border-gray-300 rounded-[6px] focus:outline-none focus:ring-1 focus:ring-black transition-all";
+
+// Date/month inputs: hide the browser's own calendar icon (we draw ours on
+// the left) and open the picker when the field is clicked instead.
+const dateInputCls = `${fieldCls} pl-9 w-40 [&::-webkit-calendar-picker-indicator]:hidden`;
+
+const openPicker = (e) => {
+  try {
+    e.currentTarget.showPicker?.();
+  } catch {
+    /* some browsers only allow showPicker from a user gesture; ignore */
+  }
+};
 
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -355,7 +372,11 @@ function CalendarSkeleton() {
   );
 }
 
-export default function ShiftTab({ companyId, companyName }) {
+export default function ShiftTab({
+  companyId,
+  companyName,
+  canBulkAllocate = true, // multiple select enabled; pass false to restrict
+}) {
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
@@ -454,6 +475,15 @@ export default function ShiftTab({ companyId, companyName }) {
       }`
     : "";
 
+  const staffOptions = useMemo(() => {
+    if (staff.loading) return [{ value: "", label: "Loading staff..." }];
+    if (staff.users.length === 0) return [{ value: "", label: "No staff" }];
+    return staff.users.map((u) => ({
+      value: String(u.uuid),
+      label: `${u.name}${u.designation ? ` – ${u.designation}` : ""}`,
+    }));
+  }, [staff.loading, staff.users]);
+
   return (
     <div className="flex flex-col gap-3 font-[Poppins]">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -462,38 +492,35 @@ export default function ShiftTab({ companyId, companyName }) {
         </p>
 
         <div className="flex flex-wrap items-center gap-2">
-          <select
+          <CustomSelect
+            ariaLabel="Select staff"
             value={selectedUserId}
-            onChange={(e) => setSelectedUserId(e.target.value)}
+            options={staffOptions}
+            onChange={setSelectedUserId}
             disabled={staff.loading || staff.users.length === 0}
-            aria-label="Select staff"
-            className="border border-gray-200 bg-white rounded-lg px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-black disabled:bg-gray-50 disabled:text-gray-400"
-          >
-            {staff.loading && <option value="">Loading staff...</option>}
-            {!staff.loading && staff.users.length === 0 && (
-              <option value="">No staff</option>
-            )}
-            {staff.users.map((u) => (
-              <option key={u.uuid} value={String(u.uuid)}>
-                {u.name}
-                {u.designation ? ` – ${u.designation}` : ""}
-              </option>
-            ))}
-          </select>
-
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            aria-label="Select month"
-            className="border border-gray-200 bg-white rounded-lg px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-black"
+            minWidth={180}
           />
+
+          <div className="relative">
+            <Icon
+              icon="solar:calendar-outline"
+              className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+            />
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              onClick={openPicker}
+              aria-label="Select month"
+              className={dateInputCls}
+            />
+          </div>
 
           <button
             type="button"
             onClick={() => setAllocateOpen(true)}
-            disabled={!selectedUserId}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-black text-white hover:bg-gray-800 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={staff.loading || staff.users.length === 0}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-[6px] bg-black text-white hover:bg-gray-800 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Icon icon="mdi:calendar-plus" className="w-4 h-4" />
             Allocate shift
@@ -503,7 +530,7 @@ export default function ShiftTab({ companyId, companyName }) {
             type="button"
             onClick={reload}
             title="Refresh"
-            className="p-2 border border-gray-200 bg-white hover:bg-gray-50 rounded-lg text-gray-700 transition-colors shadow-sm"
+            className="p-2 border border-gray-300 bg-white hover:bg-gray-50 rounded-[6px] text-gray-700 transition-colors shadow-sm"
           >
             <Icon
               icon="mdi:refresh"
@@ -565,8 +592,8 @@ export default function ShiftTab({ companyId, companyName }) {
         open={allocateOpen}
         onClose={() => setAllocateOpen(false)}
         companyId={companyId}
-        staffId={selectedUserId}
-        staffName={staffName}
+        defaultStaffId={selectedUserId} // pre-ticked, but user can change
+        canSelectMultiple={canBulkAllocate} // privilege: single only vs single + multiple
         onSuccess={({ fromDate }) => {
           // Jump to the allocated month so the new shifts are visible
           const target = String(fromDate).slice(0, 7);

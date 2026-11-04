@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import React, { useState, useEffect, useRef } from "react";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { Settings } from "lucide-react";
 import { Icon } from "@iconify/react";
 
@@ -9,7 +9,8 @@ import useAuthStore from "../../store/authStore";
 
 function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const navRef = useRef(null);
 
   // Works standalone; if parent passes props, those are used instead
   const [collapsedLocal, setCollapsedLocal] = useState(false);
@@ -20,9 +21,46 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
+  // true only below the md breakpoint (768px)
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 767px)").matches,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const onChange = (e) => setIsMobile(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // On mobile the sidebar is never "collapsed" (always shows labels)
+  const collapsed = isCollapsed && !isMobile;
+
   const toggleProfile = () => setIsProfileOpen(!isProfileOpen);
-  const openMobileSidebar = () => setIsMobileOpen(true);
-  const closeMobileSidebar = () => setIsMobileOpen(false);
+  const toggleMobileSidebar = () => setIsMobileOpen(!isMobileOpen);
+
+  // Keep the selected menu in view: after route change / opening the mobile
+  // drawer, scroll the sidebar so the active item is centered.
+  useEffect(() => {
+    const scrollToActive = () => {
+      const nav = navRef.current;
+      if (!nav) return;
+      const active = nav.querySelector('[aria-current="page"]');
+      if (!active) return;
+      const target =
+        active.offsetTop - nav.clientHeight / 2 + active.clientHeight / 2;
+      nav.scrollTo({ top: Math.max(target, 0), behavior: "auto" });
+    };
+    // wait a frame so the active link and layout are ready
+    const id = requestAnimationFrame(scrollToActive);
+    return () => cancelAnimationFrame(id);
+  }, [location.pathname, isMobileOpen, isMobile, collapsed]);
+
+  // Close the mobile drawer after navigating
+  useEffect(() => {
+    setIsMobileOpen(false);
+  }, [location.pathname]);
 
   // Logged-in user's email (saved by loginCompany). Falls back to demo name.
   // Only works if your authStore exposes `email` at the top level.
@@ -37,15 +75,11 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
       await logoutCompany();
     } finally {
       setIsProfileOpen(false);
-      closeMobileSidebar();
+      setIsMobileOpen(false);
       setIsLoggingOut(false);
       navigate("/login", { replace: true }); // adjust to your login route
     }
   };
-
-  // When collapsed, labels are hidden on desktop only (md and up).
-  // On small screens the sidebar is always shown fully expanded.
-  const hideWhenCollapsed = isCollapsed ? "md:hidden" : "";
 
   const displayName = email || "Admin User";
   const userType = "Admin";
@@ -56,16 +90,10 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
   const icons = {
     // Client management
     clientDashboard: <Icon icon="lucide:layout-dashboard" width="20" />,
-    allClients: <Icon icon="lucide:users" width="20" />,
     configuration: <Icon icon="lucide:sliders-horizontal" width="20" />,
-    addClient: <Icon icon="lucide:user-plus" width="20" />,
-    clientRequests: <Icon icon="lucide:inbox" width="20" />,
     subscriptions: <Icon icon="lucide:credit-card" width="20" />,
     invoices: <Icon icon="lucide:receipt" width="20" />,
-    tickets: <Icon icon="lucide:life-buoy" width="20" />,
-    clientReports: <Icon icon="lucide:bar-chart-3" width="20" />,
     activity: <Icon icon="lucide:activity" width="20" />,
-    contracts: <Icon icon="lucide:file-text" width="20" />,
   };
 
   // Items with a `path` navigate on click. Add `path` to the others
@@ -79,44 +107,51 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
           icon: icons.clientDashboard,
           path: "/dashboard",
         },
-
         {
           title: "Configuration",
           icon: icons.configuration,
           path: "/configuration",
         },
-
         {
           title: "Subscriptions",
           icon: icons.subscriptions,
           path: "/subscriptions",
         },
         { title: "Invoices & Billing", icon: icons.invoices },
-
         { title: "Activity Logs", icon: icons.activity },
       ],
     },
   ];
 
+  const itemBase =
+    "h-[40px] flex items-center space-x-3 px-3 rounded-lg transition-all duration-200 text-sm text-white";
+
   return (
     <>
-      {/* Mobile Hamburger (hidden while the sidebar is open) */}
-      <button
-        type="button"
-        aria-label="Open menu"
-        className={`md:hidden p-2 fixed top-4 left-4 z-50 text-black ${
-          isMobileOpen ? "hidden" : ""
-        }`}
-        onClick={openMobileSidebar}
-      >
-        <Icon icon="flowbite:bars-from-left-outline" width="24" height="24" />
-      </button>
+      {/* Mobile Hamburger (hidden while the drawer is open) */}
+      {!isMobileOpen && (
+        <button
+          type="button"
+          aria-label="Open menu"
+          className="md:hidden p-2 fixed top-4 left-4 z-40 bg-gray-800 rounded"
+          onClick={toggleMobileSidebar}
+        >
+          <Icon icon="flowbite:bars-from-left-outline" width="24" height="24" />
+        </button>
+      )}
 
-      {/* Sidebar: full width + full height on small screens, 20% / 6% on desktop */}
+      {/* Overlay for Mobile */}
+      {isMobileOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+          onClick={toggleMobileSidebar}
+        />
+      )}
+
+      {/* Sidebar: full width + full height on mobile, original widths from md up */}
       <div
-        className={`bg-black fixed top-0 left-0 z-50 flex flex-col text-white shadow-lg
-        transition-[transform,width] duration-300
-        w-full h-[100dvh] md:h-[100vh]
+        className={`bg-black fixed top-0 left-0 z-50 h-[100dvh] w-full flex flex-col text-white shadow-lg
+        transition-transform duration-300
         ${isCollapsed ? "md:w-[6%]" : "md:w-[20%]"}
         ${isMobileOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`}
       >
@@ -126,39 +161,22 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
             <img
               src={rebsLogo}
               alt="Logo"
-              className={`block ${hideWhenCollapsed} h-8 w-8`}
+              className={`${collapsed ? "hidden" : "block"} h-8 w-8`}
             />
-            <span
-              className={`text-white text-lg font-normal ${hideWhenCollapsed}`}
-            >
-              REBS Platform
-            </span>
+            {!collapsed && (
+              <span className="text-white text-lg font-normal">
+                REBS Platform
+              </span>
+            )}
           </div>
-
-          {/* Mobile: three-line icon closes the full-screen sidebar */}
           <button
             type="button"
-            aria-label="Close menu"
-            onClick={closeMobileSidebar}
-            className="md:hidden p-1 rounded transition-colors"
+            aria-label={isMobile ? "Close menu" : "Toggle sidebar"}
+            onClick={isMobile ? toggleMobileSidebar : toggleSidebar}
+            className="p-1 rounded transition-colors"
           >
             <Icon
-              icon="flowbite:bars-from-left-outline"
-              width="24"
-              height="24"
-              className="text-white"
-            />
-          </button>
-
-          {/* Desktop: collapse / expand */}
-          <button
-            type="button"
-            aria-label="Toggle sidebar"
-            onClick={toggleSidebar}
-            className="hidden md:block p-1 rounded transition-colors"
-          >
-            <Icon
-              icon="flowbite:bars-from-left-outline"
+              icon={isMobile ? "mdi:close" : "flowbite:bars-from-left-outline"}
               width="24"
               height="24"
               className="text-white"
@@ -179,12 +197,12 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
               }
             }}
             className={`flex items-center justify-center rounded-lg transition-colors duration-300 cursor-pointer
-              w-[90%] px-4 h-14
-              ${isProfileOpen ? "bg-gray-600" : "bg-gray-800 hover:bg-gray-600"}
+              ${collapsed ? "w-12 h-12" : "w-[90%] px-4 h-14"}
               ${
-                isCollapsed
-                  ? "md:w-12 md:h-12 md:px-0 md:bg-transparent md:hover:bg-transparent"
-                  : ""
+                !collapsed &&
+                (isProfileOpen
+                  ? "bg-gray-600"
+                  : "bg-gray-800 hover:bg-gray-600")
               }`}
           >
             <img
@@ -192,29 +210,27 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
               alt="Avatar"
               className="w-8 h-8 rounded-full"
             />
-            <div
-              className={`flex-1 text-left ml-3 min-w-0 ${hideWhenCollapsed}`}
-            >
-              <span className="block text-sm truncate">{displayName}</span>
-              <span className="block text-xs text-gray-400">{userType}</span>
-            </div>
-            <div
-              className={`ml-2 transition-transform duration-300 ${hideWhenCollapsed}`}
-            >
-              <Icon
-                icon="mdi:chevron-down"
-                className={`w-5 h-5 text-gray-400 ${
-                  isProfileOpen ? "rotate-180" : ""
-                }`}
-              />
-            </div>
+            {!collapsed && (
+              <div className="flex-1 text-left ml-3 min-w-0">
+                <span className="block text-sm truncate">{displayName}</span>
+                <span className="block text-xs text-gray-400">{userType}</span>
+              </div>
+            )}
+            {!collapsed && (
+              <div className="ml-2 transition-transform duration-300">
+                <Icon
+                  icon="mdi:chevron-down"
+                  className={`w-5 h-5 text-gray-400 ${
+                    isProfileOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </div>
+            )}
           </div>
 
           {/* Profile Dropdown */}
-          {isProfileOpen && (
-            <div
-              className={`mt-2 w-[90%] bg-[#1C2526] rounded-lg flex flex-col space-y-1 px-2 py-1 ${hideWhenCollapsed}`}
-            >
+          {!collapsed && isProfileOpen && (
+            <div className="mt-2 w-[90%] bg-[#1C2526] rounded-lg flex flex-col space-y-1 px-2 py-1">
               <button
                 type="button"
                 className="w-full flex items-center space-x-3 px-4 py-2 rounded-lg text-gray-300 hover:bg-gray-600 transition-colors"
@@ -227,9 +243,17 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
                 type="button"
                 onClick={handleLogout}
                 disabled={isLoggingOut}
-                className="w-full flex items-center space-x-3 px-4 py-2 rounded-lg text-gray-300 hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full flex items-center space-x-3 px-4 py-2 rounded-lg text-gray-300 hover:bg-gray-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <Icon icon="material-symbols:logout" width="20" height="20" />
+                <Icon
+                  icon={
+                    isLoggingOut
+                      ? "line-md:loading-loop"
+                      : "material-symbols:logout"
+                  }
+                  width="20"
+                  height="20"
+                />
                 <span className="text-sm flex-1 text-left">
                   {isLoggingOut ? "Logging out..." : "Logout"}
                 </span>
@@ -239,42 +263,58 @@ function SideBar({ isCollapsed: collapsedProp, toggleSidebar: toggleProp }) {
         </div>
 
         {/* Sidebar Menu */}
-        <nav className="flex-1 flex flex-col justify-start mt-7 overflow-y-auto scrollbar-hide">
+        <nav
+          ref={navRef}
+          className="relative flex-1 flex flex-col justify-start mt-7 overflow-y-auto scrollbar-hide"
+        >
           {menuItems.map((menu) => (
             <div key={menu.section} className="px-4 mb-2 space-y-2">
-              <p
-                className={`text-gray-400 text-xs mb-1 px-2 tracking-wider ${hideWhenCollapsed}`}
-              >
-                {menu.section}
-              </p>
+              {!collapsed && (
+                <p className="text-gray-400 text-xs mb-1 px-2 tracking-wider">
+                  {menu.section}
+                </p>
+              )}
               {menu.items.map((item) => {
-                // Active state comes from the URL, so it survives page changes
-                const isActive = item.path
-                  ? pathname === item.path ||
-                    pathname.startsWith(`${item.path}/`)
-                  : false;
-                return (
-                  <button
-                    key={item.title}
-                    type="button"
-                    title={isCollapsed ? item.title : undefined}
-                    onClick={() => {
-                      if (item.path) navigate(item.path);
-                      closeMobileSidebar(); // close the full-screen sidebar after picking
-                    }}
-                    className={`h-[40px] w-[90%] ${
-                      isCollapsed ? "md:w-full" : ""
-                    } flex items-center space-x-3 px-3 rounded-lg transition-all duration-200 text-sm ${
-                      isActive
-                        ? "bg-[#1C2526] text-white font-light"
-                        : "text-neutral-600 hover:text-white hover:bg-gray-800"
-                    }`}
-                  >
+                const content = (
+                  <>
                     <span className="flex-shrink-0">{item.icon}</span>
-                    <span className={`flex-1 text-left ${hideWhenCollapsed}`}>
-                      {item.title}
-                    </span>
-                  </button>
+                    {!collapsed && (
+                      <span className="flex-1 text-left">{item.title}</span>
+                    )}
+                  </>
+                );
+
+                // Items without a page yet: same look, no navigation
+                if (!item.path) {
+                  return (
+                    <button
+                      key={item.title}
+                      type="button"
+                      title={collapsed ? item.title : undefined}
+                      className={`${itemBase} hover:bg-gray-800`}
+                      style={{ width: collapsed ? "100%" : "90%" }}
+                    >
+                      {content}
+                    </button>
+                  );
+                }
+
+                return (
+                  <NavLink
+                    key={item.title}
+                    to={item.path}
+                    title={collapsed ? item.title : undefined}
+                    className={({ isActive }) =>
+                      `${itemBase} ${
+                        isActive
+                          ? "bg-[#1C2526] font-light"
+                          : "hover:bg-gray-800"
+                      }`
+                    }
+                    style={{ width: collapsed ? "100%" : "90%" }}
+                  >
+                    {content}
+                  </NavLink>
                 );
               })}
             </div>

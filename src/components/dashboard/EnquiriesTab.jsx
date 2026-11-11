@@ -43,6 +43,7 @@ function EnquiriesTab() {
     try {
       const res = await getEnquiries();
       const list = Array.isArray(res) ? res : res?.items || res?.data || [];
+
       setEnquiries(list.map(toRow));
     } catch {
       setEnquiries([]);
@@ -63,14 +64,19 @@ function EnquiriesTab() {
       onConfirm: async () => {
         try {
           await deleteEnquiry(row.id, { silent: true });
+
           setEnquiries((prev) => prev.filter((item) => item.id !== row.id));
+
           showSuccess(`Enquiry for "${row.company}" deleted successfully`);
+
           return true; // closes modal on success
         } catch (err) {
           console.error("Failed to delete enquiry:", err);
+
           showError(
             err?.message || "Failed to delete enquiry. Please try again.",
           );
+
           return false; // keeps modal open if failed
         }
       },
@@ -88,6 +94,15 @@ function EnquiriesTab() {
       align: "center",
     },
     { label: "Email", key: "email", width: 230, align: "center" },
+
+    // Phone Number column added after Email
+    {
+      label: "Phone Number",
+      key: "phone",
+      width: 180,
+      align: "center",
+    },
+
     { label: "Type", key: "type", width: 180, align: "center" },
     { label: "Services", key: "services", width: 170, align: "center" },
     {
@@ -136,8 +151,10 @@ function EnquiriesTab() {
             Manage incoming tenant and customer onboarding enquiries
           </p>
         </div>
+
         <div className="flex items-center gap-2">
           <SearchBox value={search} onChange={setSearch} />
+
           <button
             onClick={loadEnquiries}
             className="p-2 border border-gray-200 bg-white hover:bg-gray-50 rounded-lg text-gray-700 transition-colors shadow-sm"

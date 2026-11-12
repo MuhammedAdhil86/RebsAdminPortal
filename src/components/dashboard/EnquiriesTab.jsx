@@ -88,7 +88,7 @@ function EnquiriesTab() {
   const columns = [
     { label: "Company", key: "company", width: 210, align: "left" },
     {
-      label: "Contact",
+      label: "Contact Person",
       key: "name",
       width: 190,
       align: "center",
